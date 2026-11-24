@@ -86,6 +86,29 @@ Browsers cannot let a `file://` page read sibling folders without a one-time
 user grant; that is the one unavoidable click. In Firefox/Safari the button
 is hidden and the bundled snapshot is used instead.
 
+### Editing (live render only)
+
+In live render mode every page has an **Edit** button. It opens the page's
+Markdown in a text box; **Save** writes the `.md` file straight back to the
+folder, **Cancel** throws the changes away. The browser asks once for
+permission to write to the folder.
+
+Put the wiki on a shared network drive and several people can work on it with
+no server: everyone opens `index.html` from the drive in Chrome or Edge and
+picks the same folder. Each open wiki checks the folder every 5 seconds and
+shows changes made by others (it pauses while the tab is in the background or
+while you are editing).
+
+- If someone else saved the page while you were editing it, **Save** refuses
+  and keeps your text in the box, so you can copy it and redo the edit on their
+  version. Two saves landing within about a second of each other can still
+  overwrite one another — there is no locking without a server.
+- A file with Windows line endings keeps them when saved.
+- Leaving the page while editing discards unsaved changes.
+- Firefox and Safari cannot write to a folder, so they get no Edit button and
+  only see the bundled `data.js` snapshot, which does not include edits until
+  someone re-runs the build.
+
 ## Settings
 
 Local-first means settings live in the file, not in the UI. Edit `config.js`:

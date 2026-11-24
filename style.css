@@ -550,3 +550,9 @@ details.fold > *:not(summary):last-child { margin-bottom: 0; }
   pre { overflow: visible; white-space: pre-wrap; border: none; }
   a { color: inherit; }
 }
+
+/* live-mode editor */
+.edit-btn { float: right; padding: 2px 12px; font-size: 13px; }
+.editor textarea { width: 100%; min-height: 65vh; box-sizing: border-box; padding: 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; border: 1px solid var(--border); border-radius: 6px; resize: vertical; }
+.editor-bar { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.edit-msg { font-size: 13px; color: var(--muted); }
