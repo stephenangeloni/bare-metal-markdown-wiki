@@ -753,13 +753,14 @@
 
     // resizable sidebar: drag the strip, width clamped 140–480 and remembered
     const setSidebarW = function (w) { document.documentElement.style.setProperty('--sidebar-w', w + 'px'); };
-    const savedW = parseInt(localStorage.getItem('sidebar-w'), 10);
+    let savedW = NaN;
+    try { savedW = parseInt(localStorage.getItem('sidebar-w'), 10); } catch (e) {} // blocked storage: default width
     if (savedW >= 140 && savedW <= 480) setSidebarW(savedW);
     el('resizer').addEventListener('pointerdown', function (e) {
       e.preventDefault();
       let w = 0;
       const move = function (ev) { w = Math.min(480, Math.max(140, ev.clientX)); setSidebarW(w); };
-      const up = function () { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (w) localStorage.setItem('sidebar-w', w); };
+      const up = function () { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); if (w) { try { localStorage.setItem('sidebar-w', w); } catch (e) {} } };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
     });
