@@ -1,8 +1,3 @@
-/* test-live.js — live-mode state machine: refresh, poll, editor open/save.
-   Runs app.js's own functions against an in-memory folder shaped like the
-   browser's File System Access handles, with a minimal fake page. Reads can be
-   held or made to fail, so slow-share interleavings are deterministic.
-   Run: node test-live.js */
 'use strict';
 
 const fs = require('fs');
@@ -20,14 +15,13 @@ function grab(name) {
   throw new Error('unbalanced braces in ' + name);
 }
 const GRABBED = ['parseFrontmatter', 'buildIndex', 'renderLanding', 'route', 'loadLive', 'folderStamp', 'fileAt', 'readForEdit', 'saveFile',
-  'applyLive', 'showPage', 'walkDir', 'chooseFolder', 'refreshLive', 'pollLive', 'editMsg', 'lockEditor', 'openEditor', 'saveEditor', 'cancelEditor'].map(grab).join('\n');
+  'applyLive', 'showPage', 'walkDir', 'showFolder', 'chooseFolder', 'refreshLive', 'pollLive', 'editMsg', 'lockEditor', 'openEditor', 'saveEditor', 'cancelEditor'].map(grab).join('\n');
 
-/* State variables mirror the `let` block at the top of app.js: a fix that adds one must add it here too. */
 const factory = (0, eval)(`(function (env) {
   const el = env.el, location = env.location, document = env.document;
   const showDirectoryPicker = function () { return env.pick(); };
   const imgExtRe = /\\.png$/i, wikiName = 'W', IDB = { set: async function () {} };
-  let RAW = [], PAGES = {}, IMAGES = {}, STEM = {}, mode = 'bundled', liveHandle = null, lastRefresh = 0, liveStamp = '', editing = null, shownPage = '', busy = false, tocHtml = '';
+  let RAW = [], PAGES = {}, IMAGES = {}, STEM = {}, mode = 'bundled', liveHandle = null, lastRefresh = 0, liveStamp = '', editing = null, shownPage = '', loading = null, tocHtml = '';
   let landingPage = env.landingPage || '';
   function closeNav() {} function renderSidebar() {} function renderTags() {} function placeToc() {} function markActive() {}
   function setMode(m) { env.label = m === 'live' ? liveHandle.name : 'bundled'; }
@@ -42,7 +36,7 @@ const factory = (0, eval)(`(function (env) {
   ${GRABBED}
   return {
     route: route, refreshLive: refreshLive, pollLive: pollLive, openEditor: openEditor, saveEditor: saveEditor, cancelEditor: cancelEditor, chooseFolder: chooseFolder,
-    async start(h) { liveHandle = h; applyLive(await loadLive(h)); mode = 'live'; buildIndex(); setMode('live'); route(); },
+    async start(h) { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; buildIndex(); setMode('live'); route(); },
     forceRefresh() { lastRefresh = 0; return refreshLive(); },
     get editing() { return editing; }, get pages() { return PAGES; }, get handle() { return liveHandle && liveHandle.name; }
   };
@@ -68,10 +62,10 @@ function fakeFolder(name, tree) {
     return {
       kind: 'file', name: n,
       async getFile() {
-        const snap = f.bytes; // a real File is a snapshot taken at getFile() time
+        const snap = f.bytes;
         return {
           lastModified: f.modified,
-          async text() { // Blob.text(): UTF-8 decode, undecodable bytes become U+FFFD, a BOM is dropped
+          async text() {
             if (ctl.failAlways.has(p) || ctl.failOnce.delete(p)) throw new Error('NotReadableError');
             if (ctl.hold.has(p)) await new Promise(function (res) { ctl.pending.push({ path: p, res: res }); });
             return new TextDecoder().decode(snap);
@@ -118,15 +112,13 @@ function makeApp(opts) {
     screen() { return html; },
     editor() { return env.el('editText'); },
     msg() { const m = env.el('editMsg'); return m ? m.textContent : null; },
-    go(hash) { env.location.hash = hash; app.route(); } // what a hashchange does
+    go(hash) { env.location.hash = hash; app.route(); }
   };
 }
 
 const tests = [];
 function test(name, fn) { tests.push([name, fn]); }
 function check(problems, ok, what) { if (!ok) problems.push(what); }
-
-// ---------- baseline: these pass on 279d840 and show the harness behaves like the lead's manual check ----------
 
 test('baseline: an edit is saved and the saved text is shown', async function () {
   const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
@@ -157,18 +149,16 @@ test('baseline: saving over a newer version is refused and the text stays in the
   if (bad.length) throw new Error(bad.join('\n  '));
 });
 
-// ---------- refresh / poll ----------
-
 test('two overlapping reloads do not drop pages or strip front matter', async function () {
   const tree = { 'Home.md': page('---\ntitle: Fancy\ntags: t1\n---\nhome v1'), 'Zed.md': page('zed v1') };
   const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#Zed' }); await w.app.start(f.root);
   const bad = [];
   f.ctl.hold.add('Zed.md');
-  const r1 = w.app.forceRefresh(); await settle();            // e.g. focus or the refresh button, slow share
-  tree['Zed.md'] = page('zed v2');                            // someone else saves meanwhile
-  const r2 = w.app.pollLive(); await settle();                // the 5 s timer fires while the first reload is still reading
-  f.releaseOne('Zed.md'); await settle();                     // first reload finishes first
+  const r1 = w.app.forceRefresh(); await settle();
+  tree['Zed.md'] = page('zed v2');
+  const r2 = w.app.pollLive(); await settle();
+  f.releaseOne('Zed.md'); await settle();
   check(bad, !/^NOTFOUND/.test(w.screen()), 'after the first reload finished the open page rendered as: ' + w.screen());
   f.releaseAll(); await r1; await r2; await settle();
   await w.app.pollLive();
@@ -183,8 +173,8 @@ test('a reload that fails on one read is retried by the next poll', async functi
   const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
   tree['Home.md'] = page('their v2');
   f.ctl.failOnce.add('Other.md');
-  await w.app.pollLive();                                     // sees the change, the reload hits one transient read error
-  await w.app.pollLive();                                     // 5 s later, share is fine again
+  await w.app.pollLive();
+  await w.app.pollLive();
   if (!w.screen().includes('their v2')) throw new Error('still stale after a healthy poll: ' + w.screen());
 });
 
@@ -193,10 +183,10 @@ test('a reload interrupted by opening an editor is not counted as shown', async 
   const w = makeApp({ hash: '#B' }); await w.app.start(f.root);
   tree['A.md'] = page('a v2');
   f.ctl.hold.add('A.md');
-  const r = w.app.pollLive(); await settle();                 // reload in flight
-  await w.app.openEditor();                                   // user clicks Edit on B
+  const r = w.app.pollLive(); await settle();
+  await w.app.openEditor();
   f.releaseAll(); await r; await settle();
-  w.go('#A');                                                 // user leaves the editor through the sidebar
+  w.go('#A');
   await w.app.pollLive();
   if (!w.screen().includes('a v2')) throw new Error('A is stale after a healthy poll: ' + w.screen());
 });
@@ -208,8 +198,6 @@ test('after a footnote click, a change by someone else is still shown', async fu
   tree['Home.md'] = page('their v2'); await w.app.pollLive(); await w.app.pollLive();
   if (!w.screen().includes('their v2')) throw new Error('screen: ' + w.screen());
 });
-
-// ---------- editor ----------
 
 test('after a footnote click, Edit opens the page that is on screen', async function () {
   const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
@@ -224,7 +212,7 @@ test('after a footnote click, Cancel closes the editor', async function () {
   const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
   w.go('#fn-1');
   await w.app.openEditor();
-  f.ctl.failOnce.add('Home.md');                              // the reload after Cancel hits a transient read error
+  f.ctl.failOnce.add('Home.md');
   w.app.cancelEditor(); await settle();
   if (w.editor() || w.app.editing) throw new Error('editor still open; screen: ' + w.screen());
 });
@@ -233,7 +221,7 @@ test('a slow Edit on page A does not replace the draft on page B', async functio
   const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
   f.ctl.hold.add('A.md');
-  const open = w.app.openEditor(); await settle();            // read of A stalls
+  const open = w.app.openEditor(); await settle();
   w.go('#B'); await w.app.openEditor(); w.editor().value = 'draft B';
   f.releaseAll(); await open; await settle();
   const bad = [];
@@ -247,7 +235,7 @@ test('a slow save of page A does not wipe the draft on page B', async function (
   const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
   await w.app.openEditor(); w.editor().value = 'a edited';
   f.ctl.holdWrite.add('A.md');
-  const save = w.app.saveEditor(); await settle();            // write of A stalls
+  const save = w.app.saveEditor(); await settle();
   w.go('#B'); await w.app.openEditor(); w.editor().value = 'draft B';
   f.releaseAll(); await save; await settle();
   const bad = [];
@@ -263,7 +251,7 @@ test('text typed while a save is in flight is not silently dropped', async funct
   f.ctl.holdWrite.add('A.md');
   const save = w.app.saveEditor(); await settle();
   const ta = w.editor();
-  if (ta.readOnly || ta.disabled) { f.releaseAll(); await save; return; } // box locked while saving: nothing can be typed
+  if (ta.readOnly || ta.disabled) { f.releaseAll(); await save; return; }
   ta.value = 'a edited, plus a typo fix';
   f.releaseAll(); await save; await settle();
   if (!(w.editor() && w.editor().value === 'a edited, plus a typo fix' && w.app.editing)) throw new Error('box was editable during the save and the extra text is gone; screen: ' + w.screen());
@@ -273,7 +261,7 @@ test('a save that succeeds is never left as a dead editor when the follow-up rel
   const tree = { 'Home.md': page('v1'), 'Other.md': page('o') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
   await w.app.openEditor(); w.editor().value = 'v2';
-  f.ctl.failOnce.add('Other.md');                             // the reload after the write hits one transient read error
+  f.ctl.failOnce.add('Other.md');
   await w.app.saveEditor();
   const bad = [];
   check(bad, textOf(tree['Home.md']) === 'v2', 'file on disk is ' + JSON.stringify(textOf(tree['Home.md'])));
@@ -303,7 +291,7 @@ test('a folder switch that fails to load does not redirect saves to the new fold
 });
 
 test('saving a page that is not UTF-8 does not destroy the characters it could not decode', async function () {
-  const legacy = Buffer.from([0x63, 0x61, 0x66, 0xE9, 0x0A]);   // "café\n" in Windows-1252
+  const legacy = Buffer.from([0x63, 0x61, 0x66, 0xE9, 0x0A]);
   const tree = { 'Legacy.md': page(legacy) }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#Legacy' }); await w.app.start(f.root);
   await w.app.openEditor();
@@ -311,10 +299,8 @@ test('saving a page that is not UTF-8 does not destroy the characters it could n
   if (!tree['Legacy.md'].bytes.includes(0xE9)) throw new Error('bytes on disk: ' + tree['Legacy.md'].bytes.toString('hex') + ' (e9 became ef bf bd)');
 });
 
-// ---------- save, reload and folder-switch interleavings ----------
-
 function t(name, fn) { test(name, async function () { const bad = await fn(); if (bad.length) throw new Error(bad.join('\n  ')); }); }
-function gateStamp(f) { // lets a folder walk read every entry, then holds it open until release()
+function gateStamp(f) {
   const orig = f.root.values.bind(f.root); const g = { on: false, waiters: [] };
   f.root.values = async function* () { yield* orig(); if (g.on) await new Promise(function (r) { g.waiters.push(r); }); };
   g.release = function () { g.on = false; g.waiters.splice(0).forEach(function (r) { r(); }); };
@@ -354,13 +340,13 @@ t('a write that throws unlocks the editor and says so', async function () {
   const tree = { 'A.md': page('a') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
   await w.app.openEditor(); w.editor().value = 'mine';
-  f.ctl.failOnce.add('A.md');                                  // saveFile's own read of the current file fails
+  f.ctl.failOnce.add('A.md');
   await w.app.saveEditor();
   const bad = [];
   check(bad, w.editor() && w.editor().value === 'mine' && w.editor().readOnly === false, 'editor lost or locked');
   check(bad, /^Could not save/.test(w.msg() || ''), 'message: ' + w.msg());
   check(bad, textOf(tree['A.md']) === 'a', 'disk: ' + textOf(tree['A.md']));
-  await w.app.saveEditor();                                    // retry works
+  await w.app.saveEditor();
   check(bad, textOf(tree['A.md']) === 'mine', 'retry did not write; disk: ' + textOf(tree['A.md']));
   return bad;
 });
@@ -371,8 +357,8 @@ t('leaving during the write does not throw (lockEditor is not called on a missin
   await w.app.openEditor(); w.editor().value = 'a edited';
   f.ctl.holdWrite.add('A.md');
   const save = w.app.saveEditor(); await settle();
-  w.go('#B');                                                  // user walks away mid-write
-  f.releaseAll(); await save; await settle();                  // an exception in saveEditor would reject here
+  w.go('#B');
+  f.releaseAll(); await save; await settle();
   const bad = [];
   check(bad, w.screen().startsWith('PAGE B'), 'screen: ' + w.screen());
   await w.app.pollLive(); w.go('#A');
@@ -384,7 +370,7 @@ t('while the reload after a save is still reading, a draft started on another pa
   const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
   await w.app.openEditor(); w.editor().value = 'a edited';
-  const hold = gateStamp(f); hold.on = true;                   // the reload's folder walk stalls
+  const hold = gateStamp(f); hold.on = true;
   const save = w.app.saveEditor(); await settle();
   const bad = [];
   check(bad, textOf(tree['A.md']) === 'a edited', 'disk: ' + textOf(tree['A.md']));
@@ -398,17 +384,17 @@ t('while the reload after a save is still reading, a draft started on another pa
   return bad;
 });
 
-t('busy is released after a failed stamp check and after a failed reload', async function () {
+t('loading is released after a failed stamp check and after a failed reload', async function () {
   const tree = { 'Home.md': page('v1'), 'Other.md': page('o') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
   const orig = f.root.values.bind(f.root); let boom = 1;
   f.root.values = async function* () { if (boom-- > 0) throw new Error('NetworkError'); yield* orig(); };
-  await w.app.pollLive();                                      // stamp check throws
+  await w.app.pollLive();
   tree['Home.md'] = page('v2'); f.ctl.failOnce.add('Other.md');
-  await w.app.pollLive();                                      // reload throws
-  const ok = await w.app.forceRefresh();                       // the refresh button must still work
+  await w.app.pollLive();
+  const ok = await w.app.forceRefresh();
   const bad = [];
-  check(bad, ok === true, 'refresh returned ' + ok + ' (busy stuck?)');
+  check(bad, ok === true, 'refresh returned ' + ok);
   check(bad, w.screen().includes('| v2'), 'screen: ' + w.screen());
   return bad;
 });
@@ -430,12 +416,12 @@ t('a reload of folder A that finishes after a switch to folder B must not put A 
   const treeB = { 'Home.md': page('B home') }; const b = fakeFolder('B', treeB);
   const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
   a.ctl.hold.add('Slow.md');
-  const r = w.app.forceRefresh(); await settle();              // focus or the refresh button; A is slow
+  const r = w.app.forceRefresh(); await settle();
   w.env.pick = async function () { return b.root; };
-  await w.app.chooseFolder();                                  // user switches to B meanwhile
+  await w.app.chooseFolder();
   const bad = [];
   check(bad, w.screen().includes('B home'), 'right after the switch: ' + w.screen());
-  a.releaseAll(); await r; await settle();                     // A's reload finishes
+  a.releaseAll(); await r; await settle();
   check(bad, w.screen().includes('B home'), 'topbar says ' + w.env.label + ', edits go to ' + w.app.handle + ', screen shows: ' + w.screen());
   check(bad, !w.app.pages.Slow, 'index holds A\'s pages: ' + Object.keys(w.app.pages));
   await w.app.pollLive();
@@ -459,7 +445,7 @@ t('switching folder after a footnote click must show the new folder', async func
 
 t('switching folder after a footnote click while an editor is open must not leave that editor pointed at the new folder', async function () {
   const treeA = { 'Home.md': page('same') }; const a = fakeFolder('A', treeA);
-  const treeB = { 'Home.md': page('same') }; treeB['Home.md'].modified = treeA['Home.md'].modified; const b = fakeFolder('B', treeB); // e.g. a copy of the folder
+  const treeB = { 'Home.md': page('same') }; treeB['Home.md'].modified = treeA['Home.md'].modified; const b = fakeFolder('B', treeB);
   const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
   w.go('#fn-1');
   await w.app.openEditor(); w.editor().value = 'meant for A';
@@ -475,7 +461,7 @@ t('Save pressed while an earlier reload is still reading must not show the old t
   const tree = { 'Home.md': page('v1'), 'Slow.md': page('s') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
   f.ctl.hold.add('Slow.md');
-  const r = w.app.forceRefresh(); await settle();              // reload in flight: Home.md already read, stuck on Slow.md
+  const r = w.app.forceRefresh(); await settle();
   await w.app.openEditor(); w.editor().value = 'v2'; const s = w.app.saveEditor(); await settle();
   const bad = [];
   check(bad, textOf(tree['Home.md']) === 'v2', 'disk: ' + textOf(tree['Home.md']));
@@ -529,6 +515,304 @@ t('a save of A that is refused after the user left does not throw and says nothi
     check(bad, textOf(tree['A.md']) === 'theirs', 'disk: ' + textOf(tree['A.md']));
     if (draft) check(bad, w.editor() && w.editor().value === 'draft B' && !w.msg(), 'B editor: ' + (w.editor() ? JSON.stringify(w.editor().value) + ', message ' + JSON.stringify(w.msg()) : 'gone'));
   }
+  return bad;
+});
+
+function pause(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+function holdFirstWalk(f) {
+  const orig = f.root.values.bind(f.root); const g = { armed: true, waiters: [], walks: 0 };
+  f.root.values = async function* () { g.walks++; const held = g.armed; g.armed = false; yield* orig(); if (held) await new Promise(function (r) { g.waiters.push(r); }); };
+  g.release = function () { g.waiters.splice(0).forEach(function (r) { r(); }); };
+  return g;
+}
+function copyOf(tree) { const c = {}; Object.keys(tree).forEach(function (k) { c[k] = { bytes: tree[k].bytes, modified: tree[k].modified }; }); return c; }
+
+t('an Edit read of folder A that finishes after a switch to an identical copy B opens no editor and writes nothing into B', async function () {
+  const treeA = { 'Home.md': page('same') }; const a = fakeFolder('A', treeA);
+  const treeB = copyOf(treeA); const b = fakeFolder('B', treeB);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  a.ctl.hold.add('Home.md');
+  const open = w.app.openEditor(); await settle();
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder();
+  a.releaseAll(); await open; await settle();
+  const bad = [];
+  check(bad, !w.editor(), 'topbar says ' + w.env.label + ', and an editor opened from the read of folder A');
+  if (w.editor()) { w.editor().value = 'typed after the switch'; await w.app.saveEditor(); }
+  check(bad, textOf(treeB['Home.md']) === 'same', 'B/Home.md on disk is now ' + JSON.stringify(textOf(treeB['Home.md'])) + '; A/Home.md is ' + JSON.stringify(textOf(treeA['Home.md'])));
+  return bad;
+});
+
+t('an older, slower folder pick that finishes after a newer pick does not take over or close the draft', async function () {
+  const a = fakeFolder('A', { 'Home.md': page('A home') });
+  const treeB = { 'Home.md': page('B home') }; const b = fakeFolder('B', treeB);
+  const treeC = { 'Home.md': page('C home') }; const c = fakeFolder('C', treeC);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  b.ctl.hold.add('Home.md');
+  w.env.pick = async function () { return b.root; };
+  const slow = w.app.chooseFolder(); await settle();
+  w.env.pick = async function () { return c.root; };
+  await w.app.chooseFolder();
+  await w.app.openEditor();
+  const bad = [];
+  check(bad, !!w.editor(), 'could not open an editor in C');
+  if (w.editor()) w.editor().value = 'draft C';
+  b.releaseAll(); await slow; await settle();
+  check(bad, w.app.handle === 'C' && w.env.label === 'C', 'folder is now ' + w.app.handle + ', topbar says ' + w.env.label);
+  check(bad, w.editor() && w.editor().value === 'draft C', 'draft: ' + (w.editor() ? w.editor().value : 'gone; screen ' + w.screen()));
+  return bad;
+});
+
+t('with no editor open, the newer pick still wins', async function () {
+  const a = fakeFolder('A', { 'Home.md': page('A home') });
+  const b = fakeFolder('B', { 'Home.md': page('B home') });
+  const c = fakeFolder('C', { 'Home.md': page('C home') });
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  b.ctl.hold.add('Home.md');
+  w.env.pick = async function () { return b.root; };
+  const slow = w.app.chooseFolder(); await settle();
+  w.env.pick = async function () { return c.root; };
+  await w.app.chooseFolder();
+  b.releaseAll(); await slow; await settle();
+  return w.app.handle === 'C' && w.screen().includes('C home') ? [] : ['folder ' + w.app.handle + ', screen ' + w.screen()];
+});
+
+t('a slow folder pick that lands after the user started a draft does not close the draft', async function () {
+  const treeA = { 'Home.md': page('A home') }; const a = fakeFolder('A', treeA);
+  const b = fakeFolder('B', { 'Home.md': page('B home') });
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  b.ctl.hold.add('Home.md');
+  w.env.pick = async function () { return b.root; };
+  const slow = w.app.chooseFolder(); await settle();
+  await w.app.openEditor(); w.editor().value = 'draft A';
+  b.releaseAll(); await slow; await settle();
+  const bad = [];
+  check(bad, w.editor() && w.editor().value === 'draft A', 'draft: ' + (w.editor() ? w.editor().value : 'gone; screen ' + w.screen()));
+  if (w.editor()) await w.app.saveEditor();
+  check(bad, textOf(treeA['Home.md']) === 'draft A', 'A/Home.md: ' + textOf(treeA['Home.md']));
+  return bad;
+});
+
+t('the folder button does not throw away an open draft', async function () {
+  const treeA = { 'Home.md': page('A home') }; const a = fakeFolder('A', treeA);
+  const treeB = { 'Home.md': page('B home') }; const b = fakeFolder('B', treeB);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  await w.app.openEditor(); w.editor().value = 'draft A';
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder(); await settle();
+  const bad = [];
+  check(bad, w.editor() && w.editor().value === 'draft A', 'draft: ' + (w.editor() ? w.editor().value : 'gone; screen ' + w.screen()));
+  check(bad, w.app.handle === 'A', 'folder is now ' + w.app.handle);
+  return bad;
+});
+
+t('a save in folder B finishes while a reload of the old folder A is still stalled', async function () {
+  const a = fakeFolder('A', { 'Home.md': page('A home'), 'Slow.md': page('s') });
+  const treeB = { 'Home.md': page('B home') }; const b = fakeFolder('B', treeB);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  a.ctl.hold.add('Slow.md');
+  const r = w.app.forceRefresh(); await settle();
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder();
+  await w.app.openEditor(); w.editor().value = 'B edited';
+  const s = w.app.saveEditor(); await settle(); await pause(250); await settle();
+  const bad = [];
+  check(bad, textOf(treeB['Home.md']) === 'B edited', 'disk: ' + textOf(treeB['Home.md']));
+  check(bad, !w.editor() && w.screen().includes('| B edited'), 'file is written, but ' + (w.editor() ? 'the editor is still locked on ' + JSON.stringify(w.msg()) : 'screen shows ' + w.screen()));
+  a.releaseAll(); await r; await s; await settle();
+  check(bad, w.screen().includes('| B edited') && w.app.handle === 'B', 'after A settled: folder ' + w.app.handle + ', screen ' + w.screen());
+  return bad;
+});
+
+t('a save finishes while an earlier reload of the same folder is stuck on another file', async function () {
+  const tree = { 'Home.md': page('v1'), 'Stuck.md': page('s') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  f.ctl.hold.add('Stuck.md');
+  const r = w.app.forceRefresh(); await settle();
+  await w.app.openEditor(); w.editor().value = 'v2';
+  const s = w.app.saveEditor(); await settle(); await pause(250); await settle();
+  const bad = [];
+  check(bad, textOf(tree['Home.md']) === 'v2', 'disk: ' + textOf(tree['Home.md']));
+  check(bad, !w.editor() && w.screen().includes('| v2'), 'file is written, but ' + (w.editor() ? 'the editor is still locked on ' + JSON.stringify(w.msg()) : 'screen shows ' + w.screen()));
+  f.releaseAll(); await r; await s; await settle();
+  check(bad, w.screen().includes('| v2'), 'after the stuck read settled: ' + w.screen());
+  return bad;
+});
+
+t('Save shows the saved text even when every folder read fails afterwards', async function () {
+  const tree = { 'Home.md': page('v1'), 'Other.md': page('o') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = '---\ntitle: New\ntags: t9\n---\nv2';
+  f.ctl.failAlways.add('Other.md');
+  await w.app.saveEditor(); await settle();
+  const bad = [];
+  check(bad, !w.editor() && w.screen().includes('title=New | tags=t9 | v2'), 'screen: ' + w.screen());
+  f.ctl.failAlways.clear(); await w.app.pollLive();
+  check(bad, w.screen().includes('title=New | tags=t9 | v2') && w.app.pages.Other.content === 'o', 'after a healthy poll: ' + w.screen());
+  return bad;
+});
+
+t('Save keeps the other pages\' titles and tags (the index is rebuilt from source, not from stripped bodies)', async function () {
+  const tree = { 'Home.md': page('v1'), 'Fancy.md': page('---\ntitle: Fancy\ntags: t1\n---\nbody') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'v2'; await w.app.saveEditor();
+  const p = w.app.pages.Fancy;
+  return p && p.title === 'Fancy' && p.tags.join() === 't1' && p.content === 'body' ? [] : ['Fancy is now ' + JSON.stringify(p && { title: p.title, tags: p.tags, content: p.content })];
+});
+
+t('after a read that never settles, the refresh button still reloads', async function () {
+  const tree = { 'Home.md': page('v1'), 'Stuck.md': page('s') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  f.ctl.hold.add('Stuck.md');
+  const r = w.app.forceRefresh(); await settle();
+  f.ctl.hold.delete('Stuck.md');
+  tree['Home.md'] = page('their v2');
+  const ok = await w.app.forceRefresh();
+  const bad = [];
+  check(bad, ok === true && w.screen().includes('their v2'), 'refresh returned ' + ok + ', screen: ' + w.screen());
+  await w.app.pollLive();
+  tree['Home.md'] = page('their v3'); await w.app.pollLive();
+  check(bad, w.screen().includes('their v3'), 'polls after that: ' + w.screen());
+  f.releaseAll(); await r; await settle();
+  check(bad, w.screen().includes('their v3'), 'after the stuck read finally settled: ' + w.screen());
+  return bad;
+});
+
+t('the refresh button pressed during a poll\'s stamp check reloads, and the overtaken poll does nothing more', async function () {
+  const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  const g = holdFirstWalk(f);
+  const p = w.app.pollLive(); await settle();
+  tree['Home.md'].bytes = Buffer.from('their v2');
+  const ok = await w.app.forceRefresh();
+  const bad = [];
+  check(bad, ok === true && w.screen().includes('their v2'), 'refresh returned ' + ok + ', screen: ' + w.screen());
+  const walks = g.walks;
+  g.release(); await p; await settle();
+  check(bad, g.walks === walks, 'the overtaken poll started ' + (g.walks - walks) + ' more folder walk(s)');
+  return bad;
+});
+
+t('polls do not pile up behind a slow stamp check', async function () {
+  const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  const g = holdFirstWalk(f);
+  const p1 = w.app.pollLive(); await settle();
+  await w.app.pollLive(); await w.app.pollLive();
+  const bad = [];
+  check(bad, g.walks === 1, 'folder walks started: ' + g.walks);
+  g.release(); await p1; await settle();
+  tree['Home.md'] = page('v2'); await w.app.pollLive();
+  check(bad, w.screen().includes('| v2'), 'polling did not resume: ' + w.screen());
+  return bad;
+});
+
+t('a save whose user walked away is in the index as soon as the write lands, with no poll', async function () {
+  const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a edited';
+  f.ctl.holdWrite.add('A.md');
+  const save = w.app.saveEditor(); await settle();
+  w.go('#B');
+  f.releaseAll(); await save; await settle();
+  const bad = [];
+  check(bad, w.screen().startsWith('PAGE B'), 'screen: ' + w.screen());
+  w.go('#A');
+  check(bad, w.screen().includes('| a edited'), 'back on A without a poll: ' + w.screen());
+  return bad;
+});
+
+t('a save that lands while the user drafts another page leaves that draft alone', async function () {
+  const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a edited';
+  f.ctl.holdWrite.add('A.md');
+  const save = w.app.saveEditor(); await settle();
+  w.go('#B'); await w.app.openEditor(); w.editor().value = 'draft B';
+  f.releaseAll(); await save; await settle();
+  const bad = [];
+  check(bad, w.editor() && w.editor().value === 'draft B' && w.app.editing.slug === 'B', 'B draft: ' + (w.editor() ? w.editor().value : 'gone; screen ' + w.screen()));
+  await w.app.saveEditor();
+  check(bad, textOf(tree['A.md']) === 'a edited' && textOf(tree['B.md']) === 'draft B', 'disk: A=' + textOf(tree['A.md']) + ' B=' + textOf(tree['B.md']));
+  return bad;
+});
+
+t('a reload that read the page before Save never puts the old text back, even after the user passed through another editor', async function () {
+  const tree = { 'Home.md': page('v1'), 'Slow.md': page('s'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  f.ctl.hold.add('Slow.md');
+  const r = w.app.forceRefresh(); await settle();
+  await w.app.openEditor(); w.editor().value = 'v2';
+  f.ctl.holdWrite.add('Home.md');
+  const s = w.app.saveEditor(); await settle();
+  w.go('#B'); await w.app.openEditor();
+  f.ctl.holdWrite.clear(); f.ctl.pendingWrites.splice(0).forEach(function (x) { x(); }); await s; await settle();
+  w.go('#Home');
+  f.releaseAll(); await r; await settle();
+  return w.screen().includes('| v2') ? [] : ['screen: ' + w.screen()];
+});
+
+t('a refresh (button, focus, Cancel) during a slow folder pick does not cancel the pick', async function () {
+  const a = fakeFolder('A', { 'Home.md': page('A home') });
+  const b = fakeFolder('B', { 'Home.md': page('B home') });
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  b.ctl.hold.add('Home.md');
+  w.env.pick = async function () { return b.root; };
+  const slow = w.app.chooseFolder(); await settle();
+  const r = await w.app.forceRefresh(); await w.app.pollLive();
+  b.releaseAll(); await slow; await settle();
+  return r === false && w.app.handle === 'B' && w.screen().includes('B home') ? [] : ['refresh returned ' + r + ', folder ' + w.app.handle + ', screen ' + w.screen()];
+});
+
+t('a save in A while a pick of B is loading writes A, shows the saved text, and B still arrives', async function () {
+  const treeA = { 'Home.md': page('A home') }; const a = fakeFolder('A', treeA);
+  const treeB = { 'Home.md': page('B home') }; const b = fakeFolder('B', treeB);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  await w.app.openEditor(); w.editor().value = 'A edited';
+  a.ctl.holdWrite.add('Home.md');
+  const s = w.app.saveEditor(); await settle();
+  w.go('#Home');
+  b.ctl.hold.add('Home.md');
+  w.env.pick = async function () { return b.root; };
+  const slow = w.app.chooseFolder(); await settle();
+  a.releaseAll(); await s; await settle();
+  const bad = [];
+  check(bad, textOf(treeA['Home.md']) === 'A edited' && textOf(treeB['Home.md']) === 'B home', 'disk: A=' + textOf(treeA['Home.md']) + ' B=' + textOf(treeB['Home.md']));
+  b.releaseAll(); await slow; await settle();
+  check(bad, w.app.handle === 'B' && w.screen().includes('B home'), 'folder ' + w.app.handle + ', screen ' + w.screen());
+  return bad;
+});
+
+t('a save of A/Home that lands after a switch to B does not put A\'s text into B\'s index', async function () {
+  const treeA = { 'Home.md': page('A home') }; const a = fakeFolder('A', treeA);
+  const treeB = { 'Home.md': page('B home') }; const b = fakeFolder('B', treeB);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  await w.app.openEditor(); w.editor().value = 'A edited';
+  a.ctl.holdWrite.add('Home.md');
+  const s = w.app.saveEditor(); await settle();
+  w.go('#Home');
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder();
+  a.releaseAll(); await s; await settle();
+  w.go('#Home');
+  const bad = [];
+  check(bad, textOf(treeA['Home.md']) === 'A edited' && textOf(treeB['Home.md']) === 'B home', 'disk: A=' + textOf(treeA['Home.md']) + ' B=' + textOf(treeB['Home.md']));
+  check(bad, w.screen().includes('B home'), 'screen: ' + w.screen());
+  return bad;
+});
+
+function sidebarHtml(shown, hash) {
+  const tree = { innerHTML: '' };
+  const fn = grab('renderSidebar');
+  const f = (0, eval)('(function (tree, location, shownPage) { const PAGES = { "guides/setup": { folder: "guides", tags: [], title: "Setup" }, Home: { folder: "", tags: [], title: "Home" } }; const activeTag = "", landingPage = "", foldersOpen = false, sidebarOrder = "files"; function el() { return tree; } function escapeHtml(s) { return s; } function titleOf(s) { return PAGES[s].title; } function markActive() {} ' + fn + ' renderSidebar(); })');
+  f(tree, { hash: hash }, shown);
+  return tree.innerHTML;
+}
+t('a redraw after a footnote click keeps the shown page\'s folder open in the sidebar', async function () {
+  const before = sidebarHtml('guides/setup', '#guides%2Fsetup'); const after = sidebarHtml('guides/setup', '#fn-1');
+  const bad = [];
+  check(bad, /<details class="grp" open>/.test(before), 'baseline sidebar: ' + before);
+  check(bad, /<details class="grp" open>/.test(after), 'with #fn-1 in the address bar: ' + after);
   return bad;
 });
 

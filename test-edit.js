@@ -1,6 +1,3 @@
-/* test-edit.js — live-mode editing: save with conflict check, change detection.
-   Runs app.js's file functions against an in-memory folder shaped like the
-   browser's File System Access handles. Run: node test-edit.js */
 'use strict';
 
 const fs = require('fs');

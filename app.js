@@ -39,7 +39,7 @@
   let liveStamp = '';
   let editing = null;
   let shownPage = '';
-  let busy = false;
+  let loading = null;
   let tocHtml = '';            // current page's TOC, injected into the sidebar or rail
   let tocSide = (WIKI.tocSide === 'right') ? 'right' : 'left'; // from the settings in config.js
   const narrowMq = window.matchMedia('(max-width: 760px)'); // drawer breakpoint — keep in sync with the @media block in style.css
@@ -104,7 +104,8 @@
   function buildIndex() {
     PAGES = {}; STEM = {};
     RAW.forEach(function (p) {
-      const fm = parseFrontmatter(p.content);
+      if (p.src === undefined) p.src = p.content;
+      const fm = parseFrontmatter(p.src);
       const folder = p.slug.indexOf('/') !== -1 ? p.slug.slice(0, p.slug.lastIndexOf('/')) : '';
       const stemFile = p.slug.split('/').pop();
       p.tags = fm.tags; p.folder = folder; p.content = fm.body;
@@ -358,8 +359,7 @@
     });
     // a folder is open when it contains the page on screen (or the landing page),
     // otherwise per the foldersOpen setting
-    const hashSlug = decodeURIComponent(location.hash.slice(1)) || '';
-    const shown = hashSlug || (landingPage && PAGES[landingPage] ? landingPage : '');
+    const shown = shownPage || (landingPage && PAGES[landingPage] ? landingPage : '');
     const activeFolder = PAGES[shown] ? (PAGES[shown].folder || '') : '';
     const isOpen = function (p) {
       return activeFolder ? (activeFolder === p || activeFolder.indexOf(p + '/') === 0) : foldersOpen;
@@ -395,7 +395,7 @@
     else document.querySelector('.topbar').appendChild(g); // it was the last group already
   }
   function markActive() {
-    const slug = decodeURIComponent(location.hash.slice(1)) || '';
+    const slug = shownPage;
     const tree = el('tree');
     const links = Array.prototype.slice.call(tree.querySelectorAll('a'));
     links.forEach(function (a) { a.classList.toggle('active', a.dataset.slug === slug); });
@@ -562,54 +562,57 @@
     async get(k) { const d = await this.open(); return new Promise(function (res) { const g = d.transaction('kv').objectStore('kv').get(k); g.onsuccess = function () { res(g.result); }; }); },
     async set(k, v) { const d = await this.open(); const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); }
   };
-  async function chooseFolder() {
+  async function showFolder(h) {
+    const mine = loading = { h: h };
     try {
-      const h = await showDirectoryPicker({ mode: 'readwrite' });
-      const live = await loadLive(h);
-      liveHandle = h; applyLive(live);
-      try { await IDB.set('dir', h); } catch (e) {}
-      mode = 'live'; buildIndex(); renderTags(); setMode('live'); closeNav(); showPage(shownPage); el('content').scrollTop = 0;
-    } catch (e) { /* cancelled or permission denied */ }
-  }
-  async function refreshLive() {
-    if (mode !== 'live' || !liveHandle || editing || busy) return false;
-    const now = Date.now(); if (now - lastRefresh < 1500) return false; lastRefresh = now;
-    busy = true;
-    try {
-      const h = liveHandle;
       if ((await h.queryPermission({ mode: 'read' })) !== 'granted') return false;
       const live = await loadLive(h);
-      if (editing || liveHandle !== h) return false;
-      applyLive(live);
-      const scroll = el('content').scrollTop;
+      if (loading !== mine || editing) return false;
+      const scroll = h === liveHandle ? el('content').scrollTop : 0;
+      liveHandle = h; applyLive(live); mode = 'live';
       buildIndex(); renderTags(); setMode('live'); showPage(shownPage);
       el('content').scrollTop = scroll;
       return true;
-    } catch (e) { return false; } finally { busy = false; }
+    } catch (e) { return false; } finally { if (loading === mine) loading = null; }
+  }
+  async function chooseFolder() {
+    if (editing) return;
+    try {
+      const h = await showDirectoryPicker({ mode: 'readwrite' });
+      if (!(await showFolder(h))) return;
+      closeNav();
+      await IDB.set('dir', h);
+    } catch (e) { /* cancelled or permission denied */ }
+  }
+  function refreshLive() {
+    if (mode !== 'live' || editing || (loading && loading.h !== liveHandle)) return false;
+    const now = Date.now(); if (now - lastRefresh < 1500) return false; lastRefresh = now;
+    return showFolder(liveHandle);
   }
   async function pollLive() {
-    if (mode !== 'live' || !liveHandle || editing || busy || document.hidden) return;
-    busy = true;
+    if (mode !== 'live' || editing || loading || document.hidden) return;
+    const mine = loading = { h: liveHandle };
     let changed = false;
-    try { changed = (await folderStamp(liveHandle)) !== liveStamp; } catch (e) {} finally { busy = false; }
+    try { changed = (await folderStamp(liveHandle)) !== liveStamp; } catch (e) {}
+    if (loading !== mine) return;
+    loading = null;
     if (changed) { lastRefresh = 0; await refreshLive(); }
   }
 
-  // ---------- editing (live mode) ----------
   function editMsg(text) { const m = el('editMsg'); if (m) m.textContent = text; }
   function lockEditor(locked) { el('editText').readOnly = locked; el('editSave').disabled = locked; el('editCancel').disabled = locked; }
   async function openEditor() {
-    const slug = shownPage || landingPage; const p = PAGES[slug];
-    if (!p || !liveHandle || editing) return;
+    const slug = shownPage || landingPage; const p = PAGES[slug]; const h = liveHandle;
+    if (!p || !h || editing) return;
     try {
-      if ((await liveHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
-      const opened = await readForEdit(liveHandle, p.path);
-      if ((shownPage || landingPage) !== slug || editing) return;
+      if ((await h.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
+      const opened = await readForEdit(h, p.path);
+      if (liveHandle !== h || !PAGES[slug] || (shownPage || landingPage) !== slug || editing) return;
       if (opened.text.indexOf('\uFFFD') !== -1) {
         el('editNote').textContent = 'This page is not saved as UTF-8 text, so saving it here would damage its special characters. Convert it to UTF-8 in a text editor first.';
         return;
       }
-      editing = { slug: slug, path: p.path, version: opened.version, saving: false };
+      editing = { root: h, slug: slug, path: p.path, version: opened.version, saving: false };
       const page = el('page');
       page.innerHTML = crumbHtml(slug) + '<div class="editor"><textarea id="editText" spellcheck="false"></textarea>' +
         '<div class="editor-bar"><button id="editSave" class="btn" type="button" data-edit="save">Save</button>' +
@@ -624,26 +627,26 @@
     if (!ed || ed.saving) return;
     ed.saving = true; lockEditor(true); editMsg('Saving\u2026');
     let r;
-    try { r = await saveFile(liveHandle, ed.path, el('editText').value, ed.version); }
+    try { r = await saveFile(ed.root, ed.path, el('editText').value, ed.version); }
     catch (e) { r = { error: e }; }
+    if (r.ok) {
+      if (loading && loading.h === ed.root) loading = null;
+      if (liveHandle === ed.root && PAGES[ed.slug]) { PAGES[ed.slug].src = r.version.raw; buildIndex(); }
+    }
     if (editing !== ed) return;
     if (!r.ok) {
       ed.saving = false; lockEditor(false);
       editMsg(r.error ? 'Could not save: ' + r.error.message : 'Someone else changed this page while you were editing. Your text is still in the box: copy it, press Cancel to see their version, then edit again.');
       return;
     }
-    while (busy) await new Promise(function (res) { setTimeout(res, 100); });
-    if (editing !== ed) return;
-    editing = null; lastRefresh = 0;
-    if (!(await refreshLive()) && !editing) showPage(shownPage);
+    renderTags(); showPage(shownPage);
   }
   function cancelEditor() { showPage(shownPage); lastRefresh = 0; refreshLive(); }
 
   // ---------- init ----------
   async function init() {
-    el('choose').addEventListener('click', chooseFolder);
     el('refresh').addEventListener('click', refreshLive);
-    window.addEventListener('focus', refreshLive); // re-read live folder when the tab regains focus
+    window.addEventListener('focus', function () { if (!loading) refreshLive(); }); // re-read live folder when the tab regains focus
     setInterval(pollLive, 5000);
     el('search').addEventListener('input', function (e) { doSearch(e.target.value); });
     el('search').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.target.value = ''; doSearch(''); } });
@@ -682,7 +685,7 @@
     el('content').addEventListener('scroll', function () { if (!spyRaf) spyRaf = requestAnimationFrame(function () { spyRaf = 0; markTocPosition(); }); }, { passive: true });
     el('tree').addEventListener('click', function (e) { // clicking the current page's entry: same hash means no hashchange, so scroll the article back to the top
       const a = e.target.closest('a[data-slug]');
-      if (a && a.dataset.slug === decodeURIComponent(location.hash.slice(1))) { e.preventDefault(); closeNav(); el('content').scrollTo({ top: 0, behavior: 'smooth' }); }
+      if (a && a.dataset.slug === shownPage) { e.preventDefault(); closeNav(); el('content').scrollTo({ top: 0, behavior: 'smooth' }); }
     });
     el('tocRail').addEventListener('click', tocScroll);
     // narrow screens: the hamburger opens the sidebar as an overlay drawer
@@ -722,6 +725,7 @@
       const h = await IDB.get('dir');
       if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; } }
     } catch (e) {}
+    el('choose').addEventListener('click', chooseFolder);
     if (mode !== 'live') loadBundled();
 
     buildIndex();

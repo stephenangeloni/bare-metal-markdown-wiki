@@ -97,15 +97,17 @@ Put the wiki on a shared network drive and several people can work on it with
 no server: everyone opens `index.html` from the drive in Chrome or Edge and
 picks the same folder. Each open wiki checks the folder every 5 seconds and
 shows changes made by others (it pauses while the tab is in the background or
-while you are editing).
+while you are editing). While you are editing, the **Live render** button does
+nothing; save or cancel first to switch folders.
 
 - If someone else saved the page while you were editing it, **Save** refuses
   and keeps your text in the box, so you can copy it and redo the edit on their
   version. Two saves made at nearly the same moment can still overwrite one
   another — there is no locking without a server, and on a slow drive the
   unprotected moment lasts as long as the write itself.
-- Pages are saved as UTF-8 text. A page in another encoding (for example
-  Windows "ANSI") cannot be edited here; convert it to UTF-8 first.
+- Pages are saved as UTF-8 text without a byte-order mark. A page in another
+  encoding (for example Windows "ANSI") cannot be edited here; convert it to
+  UTF-8 first.
 - A file with Windows line endings keeps them when saved.
 - Leaving the page while editing discards unsaved changes.
 - Firefox and Safari cannot write to a folder, so they get no Edit button and
