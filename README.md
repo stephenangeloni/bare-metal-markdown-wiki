@@ -78,9 +78,9 @@ Instead of rebuilding, you can point the wiki directly at a folder on disk.
   Chrome/Edge)
 - Pick your Markdown folder **once**; the choice is remembered (IndexedDB) and
   reused on every later open
-- The folder is **re-read automatically when the tab regains focus**, plus a
-  **↻** button for manual refresh — the closest a serverless `file://` page
-  can get to a file watcher
+- The folder is **checked for changes every 5 seconds** and re-read when the
+  tab regains focus, plus a **↻** button for manual refresh — a serverless
+  `file://` page has no real file watcher
 
 Browsers cannot let a `file://` page read sibling folders without a one-time
 user grant; that is the one unavoidable click. In Firefox/Safari the button
@@ -90,7 +90,7 @@ is hidden and the bundled snapshot is used instead.
 
 In live render mode every page has an **Edit** button. It opens the page's
 Markdown in a text box; **Save** writes the `.md` file straight back to the
-folder, **Cancel** throws the changes away. The browser asks once for
+folder, **Cancel** throws the changes away. The browser may ask for
 permission to write to the folder.
 
 Put the wiki on a shared network drive and several people can work on it with
@@ -101,13 +101,19 @@ while you are editing).
 
 - If someone else saved the page while you were editing it, **Save** refuses
   and keeps your text in the box, so you can copy it and redo the edit on their
-  version. Two saves landing within about a second of each other can still
-  overwrite one another — there is no locking without a server.
+  version. Two saves made at nearly the same moment can still overwrite one
+  another — there is no locking without a server, and on a slow drive the
+  unprotected moment lasts as long as the write itself.
+- Pages are saved as UTF-8 text. A page in another encoding (for example
+  Windows "ANSI") cannot be edited here; convert it to UTF-8 first.
 - A file with Windows line endings keeps them when saved.
 - Leaving the page while editing discards unsaved changes.
 - Firefox and Safari cannot write to a folder, so they get no Edit button and
   only see the bundled `data.js` snapshot, which does not include edits until
   someone re-runs the build.
+- Pages can contain HTML, and the wiki runs it as is. Anyone who can write to
+  the folder can therefore run script in everyone else's browser, so share
+  the folder only with people you trust.
 
 ## Settings
 

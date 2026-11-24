@@ -38,6 +38,8 @@
   let lastRefresh = 0;         // debounce for focus auto-refresh
   let liveStamp = '';
   let editing = null;
+  let shownPage = '';
+  let busy = false;
   let tocHtml = '';            // current page's TOC, injected into the sidebar or rail
   let tocSide = (WIKI.tocSide === 'right') ? 'right' : 'left'; // from the settings in config.js
   const narrowMq = window.matchMedia('(max-width: 760px)'); // drawer breakpoint — keep in sync with the @media block in style.css
@@ -306,7 +308,7 @@
     }
     page.innerHTML = renderMarkdown(p.content);
     page.insertAdjacentHTML('afterbegin', crumbHtml(slug));
-    if (mode === 'live') page.querySelector('.breadcrumbs').insertAdjacentHTML('beforeend', '<button class="btn edit-btn" type="button" data-edit="open">Edit</button>');
+    if (mode === 'live') page.querySelector('.breadcrumbs').insertAdjacentHTML('beforeend', '<button class="btn edit-btn" type="button" data-edit="open">Edit</button><span id="editNote" class="edit-msg"></span>');
     fixMdLinks(page, p.folder);
     highlightCode(page);
     runKaTeX(page);
@@ -467,11 +469,14 @@
     if (slug) slug = decodeURIComponent(slug);
     if (slug && /^(fn|fnref)-/.test(slug)) return; // in-page footnote anchor
     closeNav(); // picking a page in the drawer closes it
-    editing = null;
+    showPage(slug);
+    el('content').scrollTop = 0; // hash-only navigation: the browser never resets the article container, so do it here
+  }
+  function showPage(slug) {
+    shownPage = slug; editing = null;
     el('page').classList.remove('home');
     if (!slug) { document.title = renderLanding() + ' — ' + wikiName; }
     else { renderPage(slug); document.title = (PAGES[slug] ? PAGES[slug].title : slug) + ' — ' + wikiName; }
-    el('content').scrollTop = 0; // hash-only navigation: the browser never resets the article container, so do it here
     renderSidebar(); // re-renders with the active page's folder chain open; ends with markActive()
   }
 
@@ -481,10 +486,11 @@
     IMAGES = {};
   }
   async function loadLive(handle) {
-    liveStamp = await folderStamp(handle);
-    RAW = []; IMAGES = {};
-    await walkDir(handle, '', RAW);
+    const live = { stamp: await folderStamp(handle), raw: [], images: {} };
+    await walkDir(handle, '', live.raw, live.images);
+    return live;
   }
+  function applyLive(live) { liveStamp = live.stamp; RAW = live.raw; IMAGES = live.images; }
   async function folderStamp(dir, prefix = '') {
     let stamp = '';
     for await (const e of dir.values()) {
@@ -520,17 +526,17 @@
     return new RegExp('\\.(' + (ok.length ? ok.join('|') : 'png|jpg|jpeg|gif|svg|webp') + ')$', 'i');
   }
   const imgExtRe = extRe(WIKI.imageExts); // bundled mode has no filter at all — the browser paints any format it supports
-  async function walkDir(handle, prefix, acc) {
+  async function walkDir(handle, prefix, acc, images) {
     for await (const e of handle.values()) {
       if (e.kind === 'file') {
         if (/\.md$/i.test(e.name)) {
           const f = await e.getFile();
           acc.push({ slug: (prefix + e.name).replace(/\.md$/i, ''), path: prefix + e.name, mtime: Math.floor(f.lastModified / 1000), content: await f.text() });
         } else if (imgExtRe.test(e.name)) {
-          IMAGES[prefix + e.name] = await fileToDataURI(await e.getFile(), e.name);
+          images[prefix + e.name] = await fileToDataURI(await e.getFile(), e.name);
         }
       } else if (e.kind === 'directory') {
-        await walkDir(e, prefix + e.name + '/', acc);
+        await walkDir(e, prefix + e.name + '/', acc, images);
       }
     }
   }
@@ -559,58 +565,76 @@
   async function chooseFolder() {
     try {
       const h = await showDirectoryPicker({ mode: 'readwrite' });
-      liveHandle = h;
+      const live = await loadLive(h);
+      liveHandle = h; applyLive(live);
       try { await IDB.set('dir', h); } catch (e) {}
-      await loadLive(h); mode = 'live'; buildIndex(); renderSidebar(); renderTags(); setMode('live'); route();
+      mode = 'live'; buildIndex(); renderSidebar(); renderTags(); setMode('live'); route();
     } catch (e) { /* cancelled or permission denied */ }
   }
   async function refreshLive() {
-    if (mode !== 'live' || !liveHandle || editing) return;
-    const now = Date.now(); if (now - lastRefresh < 1500) return; lastRefresh = now;
+    if (mode !== 'live' || !liveHandle || editing || busy) return false;
+    const now = Date.now(); if (now - lastRefresh < 1500) return false; lastRefresh = now;
+    busy = true;
     try {
-      if ((await liveHandle.queryPermission({ mode: 'read' })) !== 'granted') return;
-      await loadLive(liveHandle);
-      if (editing) return;
+      if ((await liveHandle.queryPermission({ mode: 'read' })) !== 'granted') return false;
+      const live = await loadLive(liveHandle);
+      if (editing) return false;
+      applyLive(live);
       const scroll = el('content').scrollTop;
-      buildIndex(); renderSidebar(); renderTags(); setMode('live'); route();
+      buildIndex(); renderTags(); setMode('live'); showPage(shownPage);
       el('content').scrollTop = scroll;
-    } catch (e) {}
+      return true;
+    } catch (e) { return false; } finally { busy = false; }
   }
   async function pollLive() {
-    if (mode !== 'live' || !liveHandle || editing || document.hidden) return;
-    try { if ((await folderStamp(liveHandle)) !== liveStamp) { lastRefresh = 0; await refreshLive(); } } catch (e) {}
+    if (mode !== 'live' || !liveHandle || editing || busy || document.hidden) return;
+    busy = true;
+    let changed = false;
+    try { changed = (await folderStamp(liveHandle)) !== liveStamp; } catch (e) {} finally { busy = false; }
+    if (changed) { lastRefresh = 0; await refreshLive(); }
   }
 
   // ---------- editing (live mode) ----------
-  function shownSlug() { return decodeURIComponent(location.hash.slice(1)) || landingPage; }
   function editMsg(text) { const m = el('editMsg'); if (m) m.textContent = text; }
+  function lockEditor(locked) { el('editText').readOnly = locked; el('editSave').disabled = locked; el('editCancel').disabled = locked; }
   async function openEditor() {
-    const slug = shownSlug(); const p = PAGES[slug];
-    if (!p || !liveHandle) return;
+    const slug = shownPage || landingPage; const p = PAGES[slug];
+    if (!p || !liveHandle || editing) return;
     try {
       if ((await liveHandle.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
       const opened = await readForEdit(liveHandle, p.path);
-      editing = { slug: slug, path: p.path, version: opened.version };
+      if ((shownPage || landingPage) !== slug || editing) return;
+      if (opened.text.indexOf('\uFFFD') !== -1) {
+        el('editNote').textContent = 'This page is not saved as UTF-8 text, so saving it here would damage its special characters. Convert it to UTF-8 in a text editor first.';
+        return;
+      }
+      editing = { slug: slug, path: p.path, version: opened.version, saving: false };
       const page = el('page');
       page.innerHTML = crumbHtml(slug) + '<div class="editor"><textarea id="editText" spellcheck="false"></textarea>' +
-        '<div class="editor-bar"><button class="btn" type="button" data-edit="save">Save</button>' +
-        '<button class="btn" type="button" data-edit="cancel">Cancel</button><span id="editMsg" class="edit-msg"></span></div></div>';
+        '<div class="editor-bar"><button id="editSave" class="btn" type="button" data-edit="save">Save</button>' +
+        '<button id="editCancel" class="btn" type="button" data-edit="cancel">Cancel</button><span id="editMsg" class="edit-msg"></span></div></div>';
       el('editText').value = opened.text;
       el('editText').focus();
       tocHtml = ''; placeToc(); markActive(); el('backlinks').innerHTML = '';
-    } catch (e) { editing = null; }
+    } catch (e) {}
   }
   async function saveEditor() {
-    if (!editing) return;
-    editMsg('Saving\u2026');
-    try {
-      const r = await saveFile(liveHandle, editing.path, el('editText').value, editing.version);
-      if (!r.ok) { editMsg('Someone else changed this page while you were editing. Your text is still in the box: copy it, press Cancel to see their version, then edit again.'); return; }
-      editing = null; lastRefresh = 0;
-      await refreshLive();
-    } catch (e) { editMsg('Could not save: ' + e.message); }
+    const ed = editing;
+    if (!ed || ed.saving) return;
+    ed.saving = true; lockEditor(true); editMsg('Saving\u2026');
+    let r;
+    try { r = await saveFile(liveHandle, ed.path, el('editText').value, ed.version); }
+    catch (e) { r = { error: e }; }
+    if (editing !== ed) return;
+    if (!r.ok) {
+      ed.saving = false; lockEditor(false);
+      editMsg(r.error ? 'Could not save: ' + r.error.message : 'Someone else changed this page while you were editing. Your text is still in the box: copy it, press Cancel to see their version, then edit again.');
+      return;
+    }
+    editing = null; lastRefresh = 0;
+    if (!(await refreshLive()) && !editing) showPage(shownPage);
   }
-  function cancelEditor() { editing = null; lastRefresh = 0; route(); refreshLive(); }
+  function cancelEditor() { showPage(shownPage); lastRefresh = 0; refreshLive(); }
 
   // ---------- init ----------
   async function init() {
@@ -672,7 +696,7 @@
       const t = e.target.closest('.tag'); if (!t) return;
       activeTag = (activeTag === t.dataset.tag) ? '' : t.dataset.tag;
       renderTags(); renderSidebar();
-      if (!location.hash.slice(1)) route();
+      if (!location.hash.slice(1) && !editing) route();
     });
 
     const canPick = typeof showDirectoryPicker === 'function';
@@ -693,7 +717,7 @@
 
     try {
       const h = await IDB.get('dir');
-      if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { liveHandle = h; await loadLive(h); mode = 'live'; } }
+      if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; } }
     } catch (e) {}
     if (mode !== 'live') loadBundled();
 
