@@ -841,6 +841,15 @@ t('a save that returns after someone else overwrote the page and a reload showed
   return bad;
 });
 
+t('the only page is saved, then someone removes it: the next polls stop showing it', async function () {
+  const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'v2'; await w.app.saveEditor();
+  delete tree['Home.md'];
+  await w.app.pollLive(); await w.app.pollLive();
+  return w.screen().startsWith('NOTFOUND') ? [] : ['the folder is empty but after two polls the screen shows: ' + w.screen()];
+});
+
 (async function () {
   let bad = 0;
   for (const [name, fn] of tests) {

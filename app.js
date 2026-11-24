@@ -631,7 +631,7 @@
     catch (e) { r = { error: e }; }
     if (r.ok) {
       if (loading && loading.h === ed.root) loading = null;
-      if (liveHandle === ed.root && PAGES[ed.slug]) { PAGES[ed.slug].src = r.version.raw; buildIndex(); liveStamp = ''; }
+      if (liveHandle === ed.root && PAGES[ed.slug]) { PAGES[ed.slug].src = r.version.raw; buildIndex(); liveStamp = null; }
     }
     if (editing !== ed) return;
     if (!r.ok) {
