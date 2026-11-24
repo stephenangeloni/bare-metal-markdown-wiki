@@ -487,6 +487,51 @@ t('Save pressed while an earlier reload is still reading must not show the old t
   return bad;
 });
 
+function holdNextHandle(f) {
+  const orig = f.root.getFileHandle.bind(f.root); const g = { armed: true, release: null };
+  f.root.getFileHandle = async function (n) { if (g.armed) { g.armed = false; await new Promise(function (res) { g.release = res; }); } return orig(n); };
+  return g;
+}
+
+t('a draft started on another page during the wait survives (the re-check after the wait)', async function () {
+  const tree = { 'Home.md': page('v1'), 'Slow.md': page('s'), 'Other.md': page('o') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  f.ctl.hold.add('Slow.md');
+  const r = w.app.forceRefresh(); await settle();
+  await w.app.openEditor(); w.editor().value = 'v2';
+  const s = w.app.saveEditor(); await settle();
+  w.go('#Other'); await w.app.openEditor();
+  const bad = [];
+  check(bad, !!w.editor(), 'could not open Other during the wait');
+  if (w.editor()) w.editor().value = 'draft O';
+  f.releaseAll(); await r; await s; await settle();
+  await new Promise(function (res) { setTimeout(res, 250); }); await settle();
+  check(bad, w.editor() && w.editor().value === 'draft O', 'draft: ' + (w.editor() ? w.editor().value : 'gone; screen ' + w.screen()));
+  check(bad, w.app.editing && w.app.editing.slug === 'Other', 'editing = ' + JSON.stringify(w.app.editing));
+  check(bad, textOf(tree['Home.md']) === 'v2', 'disk: ' + textOf(tree['Home.md']));
+  return bad;
+});
+
+t('a save of A that is refused after the user left does not throw and says nothing in page B\'s editor', async function () {
+  const bad = [];
+  for (const draft of [false, true]) {
+    const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
+    const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+    await w.app.openEditor(); w.editor().value = 'mine';
+    const g = holdNextHandle(f);
+    let threw = null;
+    const s = w.app.saveEditor().catch(function (e) { threw = e; }); await settle();
+    tree['A.md'] = page('theirs');
+    w.go('#B');
+    if (draft) { await w.app.openEditor(); w.editor().value = 'draft B'; }
+    g.release(); await s; await settle();
+    check(bad, !threw, (draft ? 'with' : 'without') + ' a draft on B, saveEditor threw: ' + (threw && threw.message));
+    check(bad, textOf(tree['A.md']) === 'theirs', 'disk: ' + textOf(tree['A.md']));
+    if (draft) check(bad, w.editor() && w.editor().value === 'draft B' && !w.msg(), 'B editor: ' + (w.editor() ? JSON.stringify(w.editor().value) + ', message ' + JSON.stringify(w.msg()) : 'gone'));
+  }
+  return bad;
+});
+
 (async function () {
   let bad = 0;
   for (const [name, fn] of tests) {
