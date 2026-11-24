@@ -3,9 +3,10 @@
    Loaded after style.css, so anything here wins. The colors and sizes below
    are the app's CSS variables — override only what you want to change. */
 
-/* Light or dark: the wiki follows the system setting. To keep one mode
-   whatever the system says, set it here — everything follows, code
-   colors, badges and diagrams included:
+/* Light or dark: the wiki follows the system setting, and each reader can
+   pick System, Light or Dark with the theme button (remembered in their
+   browser). To change what System means for everyone, set it here —
+   everything follows, code colors, badges and diagrams included:
 
  :root { color-scheme: light; }
 

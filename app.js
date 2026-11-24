@@ -11,6 +11,7 @@
     const allowed = scheme.split(' ');
     return allowed.includes('dark') && (systemDark || !allowed.includes('light'));
   }
+  function nextTheme(t) { return { system: 'light', light: 'dark', dark: 'system' }[t]; } // the theme button cycles System → Light → Dark
   function isSearchShortcut(e, mac) { // Cmd K on a Mac, Ctrl K elsewhere; Ctrl K on a Mac keeps its text-field meaning (delete to end of line)
     return (mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k';
   }
@@ -31,7 +32,9 @@
   const defValidateLink = md.validateLink.bind(md); // markdown-it blocks non-http schemes for links AND images; let file:// through (works when the wiki itself runs on file://, browsers block it over http — nothing more we can do)
   md.validateLink = function (u) { return /^file:\/\/\//i.test(u) || defValidateLink(u); };
   if (window.MditExtras) { md.use(MditExtras.container); md.use(MditExtras.alerts); md.use(MditExtras.tabs); md.use(MditExtras.badges); md.use(MditExtras.buttons); } // ::: containers, > [!NOTE] alerts, ::: tabs, @{ badges }, @[button links]
-  if (window.mermaid) { try { mermaid.initialize({ startOnLoad: false, theme: usesDarkScheme(getComputedStyle(document.documentElement).colorScheme, window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default' }); } catch (e) {} }
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+  function initMermaid() { if (window.mermaid) { try { mermaid.initialize({ startOnLoad: false, theme: usesDarkScheme(getComputedStyle(document.documentElement).colorScheme, systemDark.matches) ? 'dark' : 'default' }); } catch (e) {} } }
+  initMermaid();
 
   // ---------- state ----------
   const WIKI = window.WIKI || {}; // settings live in config.js; every key has a built-in default
@@ -659,6 +662,26 @@
     window.addEventListener('focus', function () { if (!loading) refreshLive(); }); // re-read live folder when the tab regains focus
     setInterval(pollLive, 5000);
     el('search').addEventListener('input', function (e) { doSearch(e.target.value); });
+    const themeBtn = el('themeBtn');
+    const themeName = { system: 'System', light: 'Light', dark: 'Dark' };
+    const showTheme = function (t) {
+      themeBtn.dataset.theme = t;
+      themeBtn.title = 'Theme: ' + themeName[t] + ' (click for ' + themeName[nextTheme(t)] + ')';
+      themeBtn.setAttribute('aria-label', themeBtn.title);
+    };
+    const redrawDiagrams = function () { // mermaid bakes its theme into the SVG, so a mode change re-renders the page; never while editing
+      initMermaid();
+      if (editing || !el('page').querySelector('.mermaid')) return;
+      const top = el('content').scrollTop; showPage(shownPage); el('content').scrollTop = top;
+    };
+    showTheme(document.documentElement.style.colorScheme || 'system'); // the <head> script already applied the saved choice
+    themeBtn.addEventListener('click', function () {
+      const t = nextTheme(themeBtn.dataset.theme);
+      document.documentElement.style.colorScheme = t === 'system' ? '' : t;
+      localStorage.setItem('theme', t);
+      showTheme(t); redrawDiagrams();
+    });
+    systemDark.addEventListener('change', redrawDiagrams);
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
     el('searchKey').textContent = mac ? '\u2318K' : 'Ctrl K';
     document.addEventListener('keydown', function (e) {

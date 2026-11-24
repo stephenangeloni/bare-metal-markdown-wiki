@@ -9,6 +9,7 @@
 
   <!-- settings live in config.js, style tweaks in user.css — both survive upgrades -->
   <script src="config.js"></script>
+  <script>try { const t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.style.colorScheme = t; } catch (e) {}</script>
 
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="vendor/highlight.css">
@@ -26,6 +27,7 @@
     </div>
     <div class="modegrp">
       <div id="mode" class="mode" title="Where pages come from: bundled snapshot (data.js) or a connected live folder"></div>
+      <button id="themeBtn" class="btn icon-btn theme-btn" type="button" data-theme="system" title="Theme: System" aria-label="Theme: System"><svg class="i-system" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></g></svg><svg class="i-dark" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5A5.5 5.5 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/></svg></button>
       <button id="refresh" class="btn icon-btn hidden" type="button" title="Re-read the connected folder now (live mode)" aria-label="Re-read folder"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
       <button id="choose" class="btn hidden" type="button" title="Point the wiki at your markdown folder for live rendering (one-time, remembered).">Live render</button>
     </div>

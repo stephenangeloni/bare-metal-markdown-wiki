@@ -25,7 +25,7 @@ function grab(name) {
 const STEMS = {};
 global.STEM = {}; global.PAGES = {};
 (0, eval)([grab('escapeHtml'), grab('markHits'), grab('resolveSlug'), grab('outsideCode'), grab('normalizeParts'), grab('absPath'), grab('extRe'),
-           grab('wikiLinks'), grab('withFootnotes'), grab('isSearchShortcut'), grab('usesDarkScheme')].join('\n') + '\n;global.isSearchShortcut=isSearchShortcut;global.usesDarkScheme=usesDarkScheme;global.withFootnotes=withFootnotes;global.wikiLinks=wikiLinks;global.absPath=absPath;global.extRe=extRe;global.markHits=markHits;');
+           grab('wikiLinks'), grab('withFootnotes'), grab('isSearchShortcut'), grab('usesDarkScheme'), grab('nextTheme')].join('\n') + '\n;global.nextTheme=nextTheme;global.isSearchShortcut=isSearchShortcut;global.usesDarkScheme=usesDarkScheme;global.withFootnotes=withFootnotes;global.wikiLinks=wikiLinks;global.absPath=absPath;global.extRe=extRe;global.markHits=markHits;');
 ['Home', 'Guides/Basics', 'Guides/Nope'].forEach(function (s) {
   global.PAGES[s] = { slug: s };
   const k = s.split('/').pop().toLowerCase();
@@ -111,6 +111,11 @@ for (const [name, scheme, systemDark, want] of schemeCases) {
   const got = usesDarkScheme(scheme, systemDark);
   if (got !== want) { bad++; console.log('FAIL: usesDarkScheme ' + name + ': got ' + got + ', want ' + want); }
 }
-const total = schemeCases.length + cases.length + pathCases.length + extCases.length + markCases.length + keyCases.length;
+const themeCases = [['system', 'light'], ['light', 'dark'], ['dark', 'system']]; // the theme button cycles System → Light → Dark
+for (const [from, want] of themeCases) {
+  const got = nextTheme(from);
+  if (got !== want) { bad++; console.log('FAIL: nextTheme ' + from + ': got ' + got + ', want ' + want); }
+}
+const total = themeCases.length + schemeCases.length + cases.length + pathCases.length + extCases.length + markCases.length + keyCases.length;
 if (bad) { console.log(bad + ' failed'); process.exit(1); }
 console.log('test-app: ' + total + '/' + total + ' passed');

@@ -336,6 +336,8 @@ img { max-width: 100%; border-radius: 6px; }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .icon-btn { width: 36px; padding: 0; }
+.theme-btn svg { display: none; }
+.theme-btn[data-theme="system"] .i-system, .theme-btn[data-theme="light"] .i-light, .theme-btn[data-theme="dark"] .i-dark { display: block; margin: auto; }
 
 /* button links inside articles — the @[label](target) markdown syntax:
    same skin as the topbar .btn, filled with the accent so CTAs stand out */
@@ -769,7 +771,7 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
    self-scrolling layout so the page flows across sheets. */
 @media print {
   :root {
-    color-scheme: light;
+    color-scheme: light !important; /* beats the theme button's inline choice: paper is always light */
     --border: #d0d0d5; --border-strong: #b0b0b8; --text: #111; --muted: #555;
   }
   html, body { height: auto; overflow: visible; }

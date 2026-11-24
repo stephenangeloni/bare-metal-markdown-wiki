@@ -23,6 +23,8 @@ works from a plain `file://` double-click.
 - Frontmatter **tags** with one-click filtering
 - Live full-text search with the searched terms highlighted (result cap and
   panel width/height set in the settings block); ⌘K (Ctrl K elsewhere) jumps to the search box
+- Light and dark mode: follows the system, or pick Light/Dark with the theme button
+  in the top bar (remembered per browser)
 - Per-page table of contents — placement set in the settings block:
   *left* (sidebar, under the page's file name) or *right* (rail beside the article)
 - Hash routing — `#path/to/page` deep links, browser back/forward work
