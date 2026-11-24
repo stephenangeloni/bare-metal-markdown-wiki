@@ -3,18 +3,50 @@
    Loaded after style.css, so anything here wins. The colors and sizes below
    are the app's CSS variables — override only what you want to change. */
 
-/* :root {
-   --bg: #fff;          --panel: #f6f8fa;      --border: #d0d7de;
-   --text: #1f2328;     --muted: #656d76;      --accent: #0969da;
-   --accent-soft: #ddf4ff;                     --code-bg: #f6f8fa;
-   --sidebar-w: 260px;  --topbar-h: 52px;
+/* Light colors (the defaults):
+
+ :root {
+   --bg: #ffffff;       --panel: #f6f6f7;      --field: #ffffff;
+   --hover: #ececee;    --border: #e2e2e5;     --border-strong: #cfcfd4;
+   --text: #111111;     --muted: #5d5e66;
+   --accent: #1a4be0;   --accent-hover: #1239b0;
+   --accent-soft: #eaf0ff;                     --on-accent: #ffffff;
+   --code-bg: #f6f6f7;  --mark: #ffef9e;
+   --ok: #1a7f37;       --ok-soft: #eafbef;
+   --danger: #cf222e;   --danger-soft: #ffebe9;
+ }
+
+   Dark colors, used when the system is set to dark mode. style.css sets
+   every color variable again for dark mode, so a color you change above
+   only applies in light mode. Change it here as well:
+
+ @media (prefers-color-scheme: dark) {
+   :root {
+     --bg: #0f0f10;     --panel: #161618;    --field: #1c1c1f;
+     --hover: #232327;  --border: #2a2a2f;   --border-strong: #3b3b42;
+     --text: #ececee;   --muted: #a1a1aa;
+     --accent: #85a3ff; --accent-hover: #adc0ff;
+     --accent-soft: rgba(133, 163, 255, 0.14); --on-accent: #0f0f10;
+     --code-bg: #161618; --mark: rgba(255, 214, 10, 0.32);
+     --ok: #56d364;     --ok-soft: rgba(86, 211, 100, 0.12);
+     --danger: #ff7b72; --danger-soft: rgba(255, 123, 114, 0.12);
+   }
+ }
+
+   Light only, whatever the system setting: copy the light block into the
+   dark block above, or into a plain :root rule placed after it.
+
+   Sizes and shapes (both modes):
+
+ :root {
+   --sidebar-w: 268px;  --topbar-h: 60px;      --radius: 10px;
  } */
 
 /* examples:
  .page { line-height: 1.8; }
- #page h2 { border-bottom: 2px solid var(--accent); } */
+ #page h2 { border-bottom: 1px solid var(--border); } */
 
-/* logo image in the brand, instead of the 📚 glyph (set brandIcon: '' in
+/* logo image in the brand, instead of the built-in mark (set brandIcon: '' in
    config.js): drop logo.svg next to index.html, then
 
  .brand::before {

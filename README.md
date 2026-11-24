@@ -22,7 +22,7 @@ works from a plain `file://` double-click.
 - Backlinks panel under every page
 - Frontmatter **tags** with one-click filtering
 - Live full-text search with the searched terms highlighted (result cap and
-  panel width/height set in the settings block)
+  panel width/height set in the settings block); ⌘K (Ctrl K elsewhere) jumps to the search box
 - Per-page table of contents — placement set in the settings block:
   *left* (sidebar, under the page's file name) or *right* (rail beside the article)
 - Hash routing — `#path/to/page` deep links, browser back/forward work
@@ -134,8 +134,8 @@ window.WIKI = {
   landingPage: 'Home', // page opened on load (a slug like 'Guides/Basics'); '' = generated home
   sidebarOrder: 'files', // 'files' (pages then folders) | 'folders' | 'alpha' (mixed alphabetical)
   imageExts: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'], // images read in live-render mode; bundled mode needs no list — the browser paints any format
-  brandIcon: '📚',        // glyph before the wiki name in the topbar; '' hides it
-  favicon: '',            // tab icon: image file next to index.html, URL, or data: URI; '' = browser default
+  // brandIcon: '📚',     // left out = built-in logo; any emoji/character replaces it; '' hides it
+  favicon: '',            // tab icon: image file next to index.html, URL, or data: URI; '' = built-in logo
   expandOnPrint: true,    // open every fold section when printing; false keeps folds as you left them
   badgeColors: {     // first words of @{ badges } that get a color
     green: ['stable', 'ok', 'done', 'active', 'success', 'passed', 'shipped', 'final'],

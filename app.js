@@ -24,7 +24,7 @@
   const defValidateLink = md.validateLink.bind(md); // markdown-it blocks non-http schemes for links AND images; let file:// through (works when the wiki itself runs on file://, browsers block it over http — nothing more we can do)
   md.validateLink = function (u) { return /^file:\/\/\//i.test(u) || defValidateLink(u); };
   if (window.MditExtras) { md.use(MditExtras.container); md.use(MditExtras.alerts); md.use(MditExtras.tabs); md.use(MditExtras.badges); md.use(MditExtras.buttons); } // ::: containers, > [!NOTE] alerts, ::: tabs, @{ badges }, @[button links]
-  if (window.mermaid) { try { mermaid.initialize({ startOnLoad: false, theme: 'default' }); } catch (e) {} }
+  if (window.mermaid) { try { mermaid.initialize({ startOnLoad: false, theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default' }); } catch (e) {} }
 
   // ---------- state ----------
   const WIKI = window.WIKI || {}; // settings live in config.js; every key has a built-in default
@@ -51,9 +51,12 @@
   document.documentElement.style.setProperty('--search-w', Math.min(100, Math.max(10, parseInt(WIKI.searchWidth, 10) || 50)) + '%'); // search panel width, 10–100% of the window
   document.documentElement.style.setProperty('--search-h', Math.min(100, Math.max(10, parseInt(WIKI.searchHeight, 10) || 60)) + 'vh'); // search panel max height, 10–100% of the window
   const wikiName = (typeof WIKI.wikiName === 'string' && WIKI.wikiName.trim()) ? WIKI.wikiName.trim() : 'Local Wiki'; // shown in topbar + tab titles
-  const brandIcon = typeof WIKI.brandIcon === 'string' ? WIKI.brandIcon : '\uD83D\uDCDA'; // topbar glyph before the name; '' hides it
-  document.querySelector('.brand').textContent = (brandIcon ? brandIcon + ' ' : '') + wikiName;
-  if (typeof WIKI.favicon === 'string' && WIKI.favicon) { const l = document.createElement('link'); l.rel = 'icon'; l.href = WIKI.favicon; document.head.appendChild(l); } // custom tab icon: file next to index.html, any URL, or a data: URI
+  document.querySelector('.brand-name').textContent = wikiName;
+  if (typeof WIKI.brandIcon === 'string') { // unset keeps the built-in mark; '' hides it; any other text replaces it
+    const mark = document.querySelector('.brand-mark');
+    if (WIKI.brandIcon) { mark.textContent = WIKI.brandIcon; mark.classList.add('brand-glyph'); } else mark.remove();
+  }
+  if (typeof WIKI.favicon === 'string' && WIKI.favicon) el('favicon').href = WIKI.favicon; // custom tab icon: file next to index.html, any URL, or a data: URI
   const expandOnPrint = WIKI.expandOnPrint !== false; // open every fold in the article right before printing, restore after
 
   // ---------- frontmatter ----------
@@ -237,7 +240,7 @@
     pageNode.querySelectorAll('pre').forEach(function (pre) {
       if (pre.querySelector('.copybtn')) return;
       const b = document.createElement('button');
-      b.className = 'copybtn'; b.type = 'button'; b.textContent = '\uD83D\uDCCB'; b.title = 'Copy code snippet'; // 📋
+      b.className = 'copybtn'; b.type = 'button'; b.title = 'Copy code snippet'; b.setAttribute('aria-label', 'Copy code snippet');
       pre.appendChild(b);
     });
   }
@@ -337,7 +340,7 @@
     }).join('') + '</ul>';
     html += '<h2>All pages</h2>';
     Object.keys(byFolder).sort().forEach(function (f) {
-      html += '<div class="grp" style="font-size:12px;color:var(--muted);margin:12px 0 4px;font-weight:700">' + escapeHtml(f) + '</div><ul>';
+      html += '<div class="home-folder">' + escapeHtml(f) + '</div><ul>';
       byFolder[f].slice().sort(function (a, b) { return titleOf(a).localeCompare(titleOf(b)); }).forEach(function (s) {
         html += '<li><a href="#' + encodeURIComponent(s) + '">' + escapeHtml(titleOf(s)) + '</a></li>';
       });
@@ -649,6 +652,10 @@
     window.addEventListener('focus', function () { if (!loading) refreshLive(); }); // re-read live folder when the tab regains focus
     setInterval(pollLive, 5000);
     el('search').addEventListener('input', function (e) { doSearch(e.target.value); });
+    el('searchKey').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '\u2318K' : 'Ctrl K';
+    document.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') { e.preventDefault(); el('search').focus(); el('search').select(); }
+    });
     el('search').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.target.value = ''; doSearch(''); } });
     el('search').addEventListener('click', function (e) { if (e.target.value) doSearch(e.target.value); }); // query still in the box → panel comes back
     document.addEventListener('click', function (e) { // any click outside box+panel dismisses the panel (text stays in the box)
@@ -672,8 +679,8 @@
       if (!b) return;
       const code = b.closest('pre').querySelector('code');
       copyText(code ? code.textContent : b.closest('pre').textContent, function () {
-        b.textContent = '\u2705'; // ✅
-        setTimeout(function () { b.textContent = '\uD83D\uDCCB'; }, 1500); // 📋
+        b.classList.add('copied');
+        setTimeout(function () { b.classList.remove('copied'); }, 1500);
       });
     });
     const tocScroll = function (e) {

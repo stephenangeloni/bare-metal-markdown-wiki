@@ -13,17 +13,17 @@
    pageWidth   : article column width, percent of the reading area — 10 to 100
    foldersOpen : start with the sidebar folders expanded (false = all collapsed)
    imageExts   : extensions read as images in live-render mode (bundled mode needs no list, the browser paints any format)
-   brandIcon   : glyph before the wiki name in the topbar (any emoji/character); '' hides it
-   favicon     : tab icon — image file next to index.html, URL, or data: URI; '' = browser default
+   brandIcon   : icon before the wiki name in the topbar — left out = built-in logo; any emoji/character replaces it; '' hides it
+   favicon     : tab icon — image file next to index.html, URL, or data: URI; '' = the built-in logo
    expandOnPrint : open every ::: fold section when printing (false keeps them closed)
    badgeColors : which first-words color inline @{ badges }
    landingPage : page opened on load (slug like 'Guides/Basics'); '' = generated home
    sidebarOrder: how the sidebar lists pages vs folders — 'files' | 'folders' | 'alpha' */
 window.WIKI = {
   maxResults: 200,
-  searchWidth: 50, // search results panel width as % of the window; 10–100 (panel hangs from the topbar's right side)
+  searchWidth: 50, // search results panel width as % of the window; 10–100 (panel is centred under the topbar)
   searchHeight: 60, // search results panel max height as % of the window; 10–100 (panel scrolls past that)
-  wikiName: 'Local Wiki', // shown in the topbar (after the book icon) and as "Page — name" tab titles
+  wikiName: 'Local Wiki', // shown in the topbar (after the icon) and as "Page — name" tab titles
   tocSide: 'left',
   tocLevels: 3, // heading levels shown in the TOC (H1..Hn); 1–6
   pageWidth: 70, // article column width as % of the reading area; 10–100
@@ -31,8 +31,8 @@ window.WIKI = {
   landingPage: 'Home', // page opened on load; '' shows the generated home (recent + folders)
   sidebarOrder: 'files', // 'files' (pages then folders) | 'folders' (folders then pages) | 'alpha' (mixed alphabetical)
   imageExts: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'], // live-render mode only; add e.g. 'bmp' or 'avif' if your browser supports it
-  brandIcon: '📚', // glyph before the wiki name in the topbar; '' hides it — the static index.html fallback keeps the default 📚; for an image, go to user.css
-  favicon: '', // browser tab icon: image file next to index.html (keep it — it's yours, like this file), any URL, or a data: URI; '' = browser default
+  // brandIcon: '📚', // left out = the built-in logo; any emoji/character replaces it; '' hides it; for an image, go to user.css
+  favicon: '', // browser tab icon: image file next to index.html (keep it — it's yours, like this file), any URL, or a data: URI; '' = the built-in logo
   expandOnPrint: true, // printing opens every fold section so nothing is hidden on paper; false keeps folds as you left them
   // first word of a badge → its color, matched case-insensitively; unknown words stay the gray pill
   badgeColors: {

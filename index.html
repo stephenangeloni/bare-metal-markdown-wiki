@@ -3,7 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Local Wiki</title>
+  <link id="favicon" rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231a4be0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='20' height='16' rx='3'/%3E%3Cpath d='M6.5 15V9l2.5 2.5L11.5 9v6'/%3E%3Cpath d='M16 9v6M14 13l2 2 2-2'/%3E%3Cg fill='%231a4be0' stroke='none'%3E%3Ccircle cx='4.9' cy='6.9' r='.9'/%3E%3Ccircle cx='19.1' cy='6.9' r='.9'/%3E%3Ccircle cx='4.9' cy='17.1' r='.9'/%3E%3Ccircle cx='19.1' cy='17.1' r='.9'/%3E%3C/g%3E%3C/svg%3E">
 
   <!-- settings live in config.js, style tweaks in user.css — both survive upgrades -->
   <script src="config.js"></script>
@@ -15,16 +17,17 @@
 </head>
 <body>
   <header class="topbar">
-    <button id="menuBtn" class="btn" type="button" title="Menu" aria-expanded="false" aria-controls="sidebar">&#9776;</button>
-    <a href="#" class="brand" data-home>&#128218; Local Wiki</a>
+    <button id="menuBtn" class="btn icon-btn" type="button" title="Menu" aria-label="Menu" aria-expanded="false" aria-controls="sidebar"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg></button>
+    <a href="#" class="brand" data-home><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="M6.5 15V9l2.5 2.5L11.5 9v6"/><path d="M16 9v6M14 13l2 2 2-2"/><g fill="currentColor" stroke="none"><circle cx="4.9" cy="6.9" r=".9"/><circle cx="19.1" cy="6.9" r=".9"/><circle cx="4.9" cy="17.1" r=".9"/><circle cx="19.1" cy="17.1" r=".9"/></g></svg></span><span class="brand-name">Local Wiki</span></a>
     <div class="search-wrap">
-      <input id="search" type="text" placeholder="Search pages…" autocomplete="off" spellcheck="false">
+      <input id="search" type="text" aria-label="Search pages" placeholder="Search pages…" autocomplete="off" spellcheck="false">
       <button id="clearSearch" class="clearbtn" type="button" title="Clear search">&times;</button>
+      <kbd id="searchKey" class="search-kbd" aria-hidden="true">Ctrl K</kbd>
     </div>
     <div class="modegrp">
       <div id="mode" class="mode" title="Where pages come from: bundled snapshot (data.js) or a connected live folder"></div>
-      <button id="refresh" class="btn hidden" title="Re-read the connected folder now (live mode)">&#8635;</button>
-      <button id="choose" class="btn hidden" title="Point the wiki at your markdown folder for live rendering (one-time, remembered).">Live render</button>
+      <button id="refresh" class="btn icon-btn hidden" type="button" title="Re-read the connected folder now (live mode)" aria-label="Re-read folder"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
+      <button id="choose" class="btn hidden" type="button" title="Point the wiki at your markdown folder for live rendering (one-time, remembered).">Live render</button>
     </div>
   </header>
 
