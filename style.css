@@ -337,6 +337,7 @@ img { max-width: 100%; border-radius: 6px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .icon-btn { width: 36px; padding: 0; }
 .theme-btn svg { display: none; }
+[data-owner-theme] .theme-btn { display: none; } /* user.css forces a mode: readers get no choice */
 .theme-btn[data-theme="system"] .i-system, .theme-btn[data-theme="light"] .i-light, .theme-btn[data-theme="dark"] .i-dark { display: block; margin: auto; }
 
 /* button links inside articles — the @[label](target) markdown syntax:

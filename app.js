@@ -33,8 +33,10 @@
   md.validateLink = function (u) { return /^file:\/\/\//i.test(u) || defValidateLink(u); };
   if (window.MditExtras) { md.use(MditExtras.container); md.use(MditExtras.alerts); md.use(MditExtras.tabs); md.use(MditExtras.badges); md.use(MditExtras.buttons); } // ::: containers, > [!NOTE] alerts, ::: tabs, @{ badges }, @[button links]
   const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
-  function initMermaid() { if (window.mermaid) { try { mermaid.initialize({ startOnLoad: false, theme: usesDarkScheme(getComputedStyle(document.documentElement).colorScheme, systemDark.matches) ? 'dark' : 'default' }); } catch (e) {} } }
-  initMermaid();
+  function currentMermaidTheme() { return usesDarkScheme(getComputedStyle(document.documentElement).colorScheme, systemDark.matches) ? 'dark' : 'default'; }
+  function initMermaid(theme) { if (window.mermaid) { try { mermaid.initialize({ startOnLoad: false, theme: theme }); } catch (e) {} } }
+  let mermaidTheme = currentMermaidTheme();
+  initMermaid(mermaidTheme);
 
   // ---------- state ----------
   const WIKI = window.WIKI || {}; // settings live in config.js; every key has a built-in default
@@ -241,9 +243,17 @@
   function runMermaid(pageNode) {
     const nodes = [];
     pageNode.querySelectorAll('pre code.language-mermaid').forEach(function (code) {
-      const div = document.createElement('div'); div.className = 'mermaid'; div.textContent = code.textContent;
+      const div = document.createElement('div'); div.className = 'mermaid'; div.textContent = div.dataset.src = code.textContent;
       const pre = code.closest('pre'); pre.replaceWith(div); nodes.push(div);
     });
+    if (nodes.length && window.mermaid) { try { mermaid.run({ nodes: nodes }); } catch (e) {} }
+  }
+  function redrawMermaid() { // mermaid bakes its theme into the SVG: when the mode flips, draw the page's diagrams again from their source
+    const theme = currentMermaidTheme();
+    if (theme === mermaidTheme) return;
+    mermaidTheme = theme; initMermaid(theme);
+    const nodes = Array.from(el('page').querySelectorAll('.mermaid'));
+    nodes.forEach(function (n) { n.removeAttribute('data-processed'); n.textContent = n.dataset.src; });
     if (nodes.length && window.mermaid) { try { mermaid.run({ nodes: nodes }); } catch (e) {} }
   }
   function addCopyButtons(pageNode) {
@@ -669,19 +679,14 @@
       themeBtn.title = 'Theme: ' + themeName[t] + ' (click for ' + themeName[nextTheme(t)] + ')';
       themeBtn.setAttribute('aria-label', themeBtn.title);
     };
-    const redrawDiagrams = function () { // mermaid bakes its theme into the SVG, so a mode change re-renders the page; never while editing
-      initMermaid();
-      if (editing || !el('page').querySelector('.mermaid')) return;
-      const top = el('content').scrollTop; showPage(shownPage); el('content').scrollTop = top;
-    };
     showTheme(document.documentElement.style.colorScheme || 'system'); // the <head> script already applied the saved choice
     themeBtn.addEventListener('click', function () {
       const t = nextTheme(themeBtn.dataset.theme);
       document.documentElement.style.colorScheme = t === 'system' ? '' : t;
-      localStorage.setItem('theme', t);
-      showTheme(t); redrawDiagrams();
+      showTheme(t); redrawMermaid();
+      try { localStorage.setItem('theme', t); } catch (e) {} // blocked storage: the choice lasts until reload
     });
-    systemDark.addEventListener('change', redrawDiagrams);
+    systemDark.addEventListener('change', redrawMermaid);
     const mac = /Mac|iPhone|iPad/.test(navigator.platform);
     el('searchKey').textContent = mac ? '\u2318K' : 'Ctrl K';
     document.addEventListener('keydown', function (e) {

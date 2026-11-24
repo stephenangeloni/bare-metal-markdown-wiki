@@ -24,7 +24,7 @@ works from a plain `file://` double-click.
 - Live full-text search with the searched terms highlighted (result cap and
   panel width/height set in the settings block); ⌘K (Ctrl K elsewhere) jumps to the search box
 - Light and dark mode: follows the system, or pick Light/Dark with the theme button
-  in the top bar (remembered per browser)
+  in the top bar (remembered per browser; hidden when `user.css` forces a mode)
 - Per-page table of contents — placement set in the settings block:
   *left* (sidebar, under the page's file name) or *right* (rail beside the article)
 - Hash routing — `#path/to/page` deep links, browser back/forward work

@@ -5,8 +5,9 @@
 
 /* Light or dark: the wiki follows the system setting, and each reader can
    pick System, Light or Dark with the theme button (remembered in their
-   browser). To change what System means for everyone, set it here —
-   everything follows, code colors, badges and diagrams included:
+   browser). To keep one mode for every reader, set it here — the theme
+   button then hides, and everything follows, code colors, badges and
+   diagrams included:
 
  :root { color-scheme: light; }
 
