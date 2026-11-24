@@ -3,40 +3,48 @@
    Loaded after style.css, so anything here wins. The colors and sizes below
    are the app's CSS variables — override only what you want to change. */
 
-/* Light colors (the defaults):
+/* Light or dark: the wiki follows the system setting. To keep one mode
+   whatever the system says, set it here — everything follows, code
+   colors, badges and diagrams included:
+
+ :root { color-scheme: light; }
+
+   Colors: each one is light-dark(light value, dark value). A plain color
+   applies in both modes; give both values to keep them apart:
 
  :root {
-   --bg: #ffffff;       --panel: #f6f6f7;      --field: #ffffff;
-   --hover: #ececee;    --border: #e2e2e5;     --border-strong: #cfcfd4;
-   --text: #111111;     --muted: #5d5e66;
-   --accent: #1a4be0;   --accent-hover: #1239b0;
-   --accent-soft: #eaf0ff;                     --on-accent: #ffffff;
-   --code-bg: #f6f6f7;  --mark: #ffef9e;
-   --ok: #1a7f37;       --ok-soft: #eafbef;
-   --danger: #cf222e;   --danger-soft: #ffebe9;
+   --accent: #b00020;                       (both modes)
+   --accent: light-dark(#b00020, #ff8a9a);  (light, dark)
  }
 
-   Dark colors, used when the system is set to dark mode. style.css sets
-   every color variable again for dark mode, so a color you change above
-   only applies in light mode. Change it here as well:
+   The defaults, as light-dark(light, dark):
 
- @media (prefers-color-scheme: dark) {
-   :root {
-     --bg: #0f0f10;     --panel: #161618;    --field: #1c1c1f;
-     --hover: #232327;  --border: #2a2a2f;   --border-strong: #3b3b42;
-     --text: #ececee;   --muted: #a1a1aa;
-     --accent: #85a3ff; --accent-hover: #adc0ff;
-     --accent-soft: rgba(133, 163, 255, 0.14); --on-accent: #0f0f10;
-     --code-bg: #161618; --mark: rgba(255, 214, 10, 0.32);
-     --ok: #56d364;     --ok-soft: rgba(86, 211, 100, 0.12);
-     --danger: #ff7b72; --danger-soft: rgba(255, 123, 114, 0.12);
-   }
+ :root {
+   --bg:            light-dark(#ffffff, #0f0f10);
+   --panel:         light-dark(#f6f6f7, #161618);
+   --field:         light-dark(#ffffff, #1c1c1f);
+   --hover:         light-dark(#ececee, #232327);
+   --border:        light-dark(#e2e2e5, #2a2a2f);
+   --border-strong: light-dark(#cfcfd4, #3b3b42);
+   --text:          light-dark(#111111, #ececee);
+   --muted:         light-dark(#5d5e66, #a1a1aa);
+   --accent:        light-dark(#1a4be0, #85a3ff);
+   --accent-hover:  light-dark(#1239b0, #adc0ff);
+   --accent-soft:   light-dark(#eaf0ff, rgba(133, 163, 255, 0.14));
+   --on-accent:     light-dark(#ffffff, #0f0f10);
+   --code-bg:       light-dark(#f6f6f7, #161618);
+   --mark:          light-dark(#ffef9e, rgba(255, 214, 10, 0.32));
+   --ok:            light-dark(#1a7f37, #56d364);
+   --warn:          light-dark(#9a6700, #e3b341);
+   --danger:        light-dark(#cf222e, #ff7b72);
+   --purple:        light-dark(#8250df, #bc8cff);
  }
 
-   Light only, whatever the system setting: copy the light block into the
-   dark block above, or into a plain :root rule placed after it.
+   --ok, --warn, --danger, --accent and --purple also color the green,
+   yellow, red, blue and purple badges. Code colors are the --hl-*
+   variables at the top of style.css.
 
-   Sizes and shapes (both modes):
+   Sizes and shapes:
 
  :root {
    --sidebar-w: 268px;  --topbar-h: 60px;      --radius: 10px;

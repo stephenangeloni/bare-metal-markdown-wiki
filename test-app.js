@@ -25,7 +25,7 @@ function grab(name) {
 const STEMS = {};
 global.STEM = {}; global.PAGES = {};
 (0, eval)([grab('escapeHtml'), grab('markHits'), grab('resolveSlug'), grab('outsideCode'), grab('normalizeParts'), grab('absPath'), grab('extRe'),
-           grab('wikiLinks'), grab('withFootnotes')].join('\n') + '\n;global.withFootnotes=withFootnotes;global.wikiLinks=wikiLinks;global.absPath=absPath;global.extRe=extRe;global.markHits=markHits;');
+           grab('wikiLinks'), grab('withFootnotes'), grab('isSearchShortcut'), grab('usesDarkScheme')].join('\n') + '\n;global.isSearchShortcut=isSearchShortcut;global.usesDarkScheme=usesDarkScheme;global.withFootnotes=withFootnotes;global.wikiLinks=wikiLinks;global.absPath=absPath;global.extRe=extRe;global.markHits=markHits;');
 ['Home', 'Guides/Basics', 'Guides/Nope'].forEach(function (s) {
   global.PAGES[s] = { slug: s };
   const k = s.split('/').pop().toLowerCase();
@@ -85,5 +85,32 @@ for (const [name, text, q, want] of markCases) {
   const got = markHits(text, q.toLowerCase());
   if (got !== want) { bad++; console.log('FAIL: markHits ' + name + ': got ' + JSON.stringify(got) + ', want ' + JSON.stringify(want)); }
 }
+const keyCases = [ // Cmd K on a Mac, Ctrl K elsewhere; Ctrl K on a Mac stays the text-field shortcut
+  ['mac cmd k',          true,  { metaKey: true, key: 'k' },                 true],
+  ['mac cmd K caps',     true,  { metaKey: true, key: 'K' },                 true],
+  ['mac ctrl k',         true,  { ctrlKey: true, key: 'k' },                 false],
+  ['mac cmd shift k',    true,  { metaKey: true, shiftKey: true, key: 'k' }, false],
+  ['mac cmd alt k',      true,  { metaKey: true, altKey: true, key: 'k' },   false],
+  ['mac cmd ctrl k',     true,  { metaKey: true, ctrlKey: true, key: 'k' },  false],
+  ['other ctrl k',       false, { ctrlKey: true, key: 'k' },                 true],
+  ['other meta k',       false, { metaKey: true, key: 'k' },                 false],
+  ['other ctrl j',       false, { ctrlKey: true, key: 'j' },                 false],
+];
+for (const [name, mac, e, want] of keyCases) {
+  const got = isSearchShortcut(Object.assign({ metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }, e), mac);
+  if (got !== want) { bad++; console.log('FAIL: isSearchShortcut ' + name + ': got ' + got + ', want ' + want); }
+}
+const schemeCases = [ // the CSS color-scheme value decides, the system setting only when both are allowed
+  ['both, system dark',  'light dark', true,  true],
+  ['both, system light', 'light dark', false, false],
+  ['forced light',       'light',      true,  false],
+  ['forced dark',        'dark',       false, true],
+  ['normal = light',     'normal',     true,  false],
+];
+for (const [name, scheme, systemDark, want] of schemeCases) {
+  const got = usesDarkScheme(scheme, systemDark);
+  if (got !== want) { bad++; console.log('FAIL: usesDarkScheme ' + name + ': got ' + got + ', want ' + want); }
+}
+const total = schemeCases.length + cases.length + pathCases.length + extCases.length + markCases.length + keyCases.length;
 if (bad) { console.log(bad + ' failed'); process.exit(1); }
-console.log('test-app: ' + (cases.length + pathCases.length + extCases.length + markCases.length) + '/' + (cases.length + pathCases.length + extCases.length + markCases.length) + ' passed');
+console.log('test-app: ' + total + '/' + total + ' passed');

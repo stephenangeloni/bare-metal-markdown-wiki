@@ -7,6 +7,13 @@
 
   // ---------- tiny helpers ----------
   function el(id) { return document.getElementById(id); }
+  function usesDarkScheme(scheme, systemDark) { // same rule the browser uses to resolve light-dark() in style.css
+    const allowed = scheme.split(' ');
+    return allowed.includes('dark') && (systemDark || !allowed.includes('light'));
+  }
+  function isSearchShortcut(e, mac) { // Cmd K on a Mac, Ctrl K elsewhere; Ctrl K on a Mac keeps its text-field meaning (delete to end of line)
+    return (mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k';
+  }
   function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -24,7 +31,7 @@
   const defValidateLink = md.validateLink.bind(md); // markdown-it blocks non-http schemes for links AND images; let file:// through (works when the wiki itself runs on file://, browsers block it over http — nothing more we can do)
   md.validateLink = function (u) { return /^file:\/\/\//i.test(u) || defValidateLink(u); };
   if (window.MditExtras) { md.use(MditExtras.container); md.use(MditExtras.alerts); md.use(MditExtras.tabs); md.use(MditExtras.badges); md.use(MditExtras.buttons); } // ::: containers, > [!NOTE] alerts, ::: tabs, @{ badges }, @[button links]
-  if (window.mermaid) { try { mermaid.initialize({ startOnLoad: false, theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default' }); } catch (e) {} }
+  if (window.mermaid) { try { mermaid.initialize({ startOnLoad: false, theme: usesDarkScheme(getComputedStyle(document.documentElement).colorScheme, window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'default' }); } catch (e) {} }
 
   // ---------- state ----------
   const WIKI = window.WIKI || {}; // settings live in config.js; every key has a built-in default
@@ -652,9 +659,10 @@
     window.addEventListener('focus', function () { if (!loading) refreshLive(); }); // re-read live folder when the tab regains focus
     setInterval(pollLive, 5000);
     el('search').addEventListener('input', function (e) { doSearch(e.target.value); });
-    el('searchKey').textContent = /Mac|iPhone|iPad/.test(navigator.platform) ? '\u2318K' : 'Ctrl K';
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+    el('searchKey').textContent = mac ? '\u2318K' : 'Ctrl K';
     document.addEventListener('keydown', function (e) {
-      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') { e.preventDefault(); el('search').focus(); el('search').select(); }
+      if (isSearchShortcut(e, mac)) { e.preventDefault(); el('search').focus(); el('search').select(); }
     });
     el('search').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.target.value = ''; doSearch(''); } });
     el('search').addEventListener('click', function (e) { if (e.target.value) doSearch(e.target.value); }); // query still in the box → panel comes back

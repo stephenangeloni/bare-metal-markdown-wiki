@@ -10,56 +10,47 @@
 /* ── 1. Base & reset ─────────────────────────────────────── */
 
 :root {
-  --bg: #ffffff;
-  --panel: #f6f6f7;
-  --field: #ffffff;
-  --hover: #ececee;
-  --border: #e2e2e5;
-  --border-strong: #cfcfd4;
-  --text: #111111;
-  --muted: #5d5e66;
-  --accent: #1a4be0;
-  --accent-hover: #1239b0;
-  --accent-soft: #eaf0ff;
-  --on-accent: #ffffff;
-  --code-bg: #f6f6f7;
-  --ok: #1a7f37;
-  --ok-soft: #eafbef;
-  --danger: #cf222e;
-  --danger-soft: #ffebe9;
-  --mark: #ffef9e;
-  --shadow: 0 12px 32px rgba(17, 17, 17, 0.12), 0 1px 3px rgba(17, 17, 17, 0.08);
+  color-scheme: light dark;
+  --bg: light-dark(#ffffff, #0f0f10);
+  --panel: light-dark(#f6f6f7, #161618);
+  --field: light-dark(#ffffff, #1c1c1f);
+  --hover: light-dark(#ececee, #232327);
+  --border: light-dark(#e2e2e5, #2a2a2f);
+  --border-strong: light-dark(#cfcfd4, #3b3b42);
+  --text: light-dark(#111111, #ececee);
+  --muted: light-dark(#5d5e66, #a1a1aa);
+  --accent: light-dark(#1a4be0, #85a3ff);
+  --accent-hover: light-dark(#1239b0, #adc0ff);
+  --accent-soft: light-dark(#eaf0ff, rgba(133, 163, 255, 0.14));
+  --on-accent: light-dark(#ffffff, #0f0f10);
+  --code-bg: light-dark(#f6f6f7, #161618);
+  --ok: light-dark(#1a7f37, #56d364);
+  --ok-soft: light-dark(#eafbef, rgba(86, 211, 100, 0.12));
+  --warn: light-dark(#9a6700, #e3b341);
+  --danger: light-dark(#cf222e, #ff7b72);
+  --danger-soft: light-dark(#ffebe9, rgba(255, 123, 114, 0.12));
+  --purple: light-dark(#8250df, #bc8cff);
+  --mark: light-dark(#ffef9e, rgba(255, 214, 10, 0.32));
+  --shadow: 0 12px 32px light-dark(rgba(17, 17, 17, 0.12), rgba(0, 0, 0, 0.5)), 0 1px 3px light-dark(rgba(17, 17, 17, 0.08), rgba(255, 255, 255, 0.04));
+  --hl-text: light-dark(#24292e, #c9d1d9);
+  --hl-keyword: light-dark(#d73a49, #ff7b72);
+  --hl-title: light-dark(#6f42c1, #d2a8ff);
+  --hl-constant: light-dark(#005cc5, #79c0ff);
+  --hl-string: light-dark(#032f62, #a5d6ff);
+  --hl-builtin: light-dark(#e36209, #ffa657);
+  --hl-comment: light-dark(#6a737d, #8b949e);
+  --hl-tag: light-dark(#22863a, #7ee787);
+  --hl-section: light-dark(#005cc5, #1f6feb);
+  --hl-bullet: light-dark(#735c0f, #f2cc60);
+  --hl-addition: light-dark(#22863a, #aff5b4);
+  --hl-addition-bg: light-dark(#f0fff4, #033a16);
+  --hl-deletion: light-dark(#b31d28, #ffdcd7);
+  --hl-deletion-bg: light-dark(#ffeef0, #67060c);
   --radius: 10px;
   --sidebar-w: 268px;
   --topbar-h: 60px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --ease: cubic-bezier(0.2, 0, 0, 1);
-  color-scheme: light;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f0f10;
-    --panel: #161618;
-    --field: #1c1c1f;
-    --hover: #232327;
-    --border: #2a2a2f;
-    --border-strong: #3b3b42;
-    --text: #ececee;
-    --muted: #a1a1aa;
-    --accent: #85a3ff;
-    --accent-hover: #adc0ff;
-    --accent-soft: rgba(133, 163, 255, 0.14);
-    --on-accent: #0f0f10;
-    --code-bg: #161618;
-    --ok: #56d364;
-    --ok-soft: rgba(86, 211, 100, 0.12);
-    --danger: #ff7b72;
-    --danger-soft: rgba(255, 123, 114, 0.12);
-    --mark: rgba(255, 214, 10, 0.32);
-    --shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
-    color-scheme: dark;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -629,18 +620,11 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
   white-space: nowrap;
   vertical-align: 1px;
 }
-.badge--green  { color: #1a7f37; background: #eafbef; border-color: #4ac26b; }
-.badge--yellow { color: #9a6700; background: #fff8c5; border-color: #d4a72c; }
-.badge--red    { color: #cf222e; background: #ffebe9; border-color: #ffa19b; }
-.badge--blue   { color: #1a4be0; background: #eaf0ff; border-color: #7f9cf5; }
-.badge--purple { color: #8250df; background: #fbefff; border-color: #a475f9; }
-@media (prefers-color-scheme: dark) {
-  .badge--green  { color: #56d364; background: rgba(86, 211, 100, 0.12); border-color: rgba(86, 211, 100, 0.4); }
-  .badge--yellow { color: #e3b341; background: rgba(227, 179, 65, 0.12); border-color: rgba(227, 179, 65, 0.4); }
-  .badge--red    { color: #ff7b72; background: rgba(255, 123, 114, 0.12); border-color: rgba(255, 123, 114, 0.4); }
-  .badge--blue   { color: #85a3ff; background: rgba(133, 163, 255, 0.12); border-color: rgba(133, 163, 255, 0.4); }
-  .badge--purple { color: #bc8cff; background: rgba(188, 140, 255, 0.12); border-color: rgba(188, 140, 255, 0.4); }
-}
+.badge--green  { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+.badge--yellow { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+.badge--red    { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+.badge--blue   { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.badge--purple { color: var(--purple); background: color-mix(in srgb, var(--purple) 12%, transparent); border-color: color-mix(in srgb, var(--purple) 40%, transparent); }
 
 /* GitHub-style alerts: > [!NOTE] etc (vendor/mdit-extras.js).
    Colors + icons are the official GitHub palette; the icons are
@@ -686,24 +670,20 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
 .markdown-alert.markdown-alert-caution .markdown-alert-title { color: #f85149; }
 .markdown-alert.markdown-alert-caution .markdown-alert-title::before { background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23f85149' d='M4.47.22A.749.749 0 0 1 5 0h6c.199 0 .389.079.53.22l4.25 4.25c.141.14.22.331.22.53v6a.749.749 0 0 1-.22.53l-4.25 4.25A.749.749 0 0 1 11 16H5a.749.749 0 0 1-.53-.22L.22 11.53A.749.749 0 0 1 0 11V5c0-.199.079-.389.22-.53Zm.84 1.28L1.5 5.31v5.38l3.81 3.81h5.38l3.81-3.81V5.31L10.69 1.5ZM8 4a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 8 4Zm0 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z'/%3E%3C/svg%3E"); }
 
-/* highlight.js: vendor/highlight.css is GitHub light; GitHub dark colours here */
-@media (prefers-color-scheme: dark) {
-  .hljs { color: #c9d1d9; background: transparent; }
-  .hljs-doctag, .hljs-keyword, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-variable.language_ { color: #ff7b72; }
-  .hljs-title, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-title.function_ { color: #d2a8ff; }
-  .hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator, .hljs-variable, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id { color: #79c0ff; }
-  .hljs-regexp, .hljs-string, .hljs-meta .hljs-string { color: #a5d6ff; }
-  .hljs-built_in, .hljs-symbol { color: #ffa657; }
-  .hljs-comment, .hljs-code, .hljs-formula { color: #8b949e; }
-  .hljs-name, .hljs-quote, .hljs-selector-tag, .hljs-selector-pseudo { color: #7ee787; }
-  .hljs-subst { color: #c9d1d9; }
-  .hljs-section { color: #1f6feb; }
-  .hljs-bullet { color: #f2cc60; }
-  .hljs-emphasis { color: #c9d1d9; }
-  .hljs-strong { color: #c9d1d9; }
-  .hljs-addition { color: #aff5b4; background-color: #033a16; }
-  .hljs-deletion { color: #ffdcd7; background-color: #67060c; }
-}
+/* highlight.js: vendor/highlight.css is GitHub light; these rules repaint it from the --hl-* colors so both modes follow color-scheme */
+.hljs, .hljs-subst, .hljs-emphasis, .hljs-strong { color: var(--hl-text); }
+.hljs { background: transparent; }
+.hljs-doctag, .hljs-keyword, .hljs-meta .hljs-keyword, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-variable.language_ { color: var(--hl-keyword); }
+.hljs-title, .hljs-title.class_, .hljs-title.class_.inherited__, .hljs-title.function_ { color: var(--hl-title); }
+.hljs-attr, .hljs-attribute, .hljs-literal, .hljs-meta, .hljs-number, .hljs-operator, .hljs-variable, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id { color: var(--hl-constant); }
+.hljs-regexp, .hljs-string, .hljs-meta .hljs-string { color: var(--hl-string); }
+.hljs-built_in, .hljs-symbol { color: var(--hl-builtin); }
+.hljs-comment, .hljs-code, .hljs-formula { color: var(--hl-comment); }
+.hljs-name, .hljs-quote, .hljs-selector-tag, .hljs-selector-pseudo { color: var(--hl-tag); }
+.hljs-section { color: var(--hl-section); }
+.hljs-bullet { color: var(--hl-bullet); }
+.hljs-addition { color: var(--hl-addition); background-color: var(--hl-addition-bg); }
+.hljs-deletion { color: var(--hl-deletion); background-color: var(--hl-deletion-bg); }
 
 /* ── 7. Search results dropdown ──────────────────────────── */
 
@@ -789,9 +769,8 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
    self-scrolling layout so the page flows across sheets. */
 @media print {
   :root {
-    --bg: #fff; --panel: #f6f6f7; --field: #fff; --border: #d0d0d5; --border-strong: #b0b0b8;
-    --text: #111; --muted: #555; --accent: #1a4be0; --code-bg: #f6f6f7;
     color-scheme: light;
+    --border: #d0d0d5; --border-strong: #b0b0b8; --text: #111; --muted: #555;
   }
   html, body { height: auto; overflow: visible; }
   body { display: block; }
