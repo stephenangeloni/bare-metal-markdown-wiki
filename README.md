@@ -24,7 +24,9 @@ works from a plain `file://` double-click.
 - Live full-text search with the searched terms highlighted (result cap and
   panel width/height set in the settings block); ⌘K (Ctrl K elsewhere) jumps to the search box
 - Light and dark mode: follows the system, or pick Light/Dark with the theme button
-  in the top bar (remembered per browser; hidden when `user.css` forces a mode)
+  in the top bar (remembered per browser; hidden when `user.css` forces a mode).
+  Printing always uses light colours, but Mermaid diagrams keep the colours they
+  were drawn in: switch to Light before printing a page with diagrams
 - Per-page table of contents — placement set in the settings block:
   *left* (sidebar, under the page's file name) or *right* (rail beside the article)
 - Hash routing — `#path/to/page` deep links, browser back/forward work
@@ -126,12 +128,12 @@ Local-first means settings live in the file, not in the UI. Edit `config.js`:
 ```javascript
 window.WIKI = {
   maxResults: 200,   // maximum number of search results to display
-  searchWidth: 50,   // results panel width as % of the window; 10–100
+  searchWidth: 50,   // results panel width as % of the window; 10–100 (full width at 760px and below)
   searchHeight: 60,  // results panel max height as % of the window; 10–100
   wikiName: 'Local Wiki', // shown in the topbar and as "Page — name" tab titles
   tocSide: 'left',   // 'left' (sidebar) or 'right' (rail beside the article)
   tocLevels: 3,      // heading levels shown in the TOC (H1..Hn); 1–6
-  pageWidth: 70,     // article column width as % of the reading area; 10–100
+  pageWidth: 70,     // article column width as % of the reading area; 10–100 (full width at 760px and below)
   foldersOpen: false, // start with the sidebar folders expanded (false = all collapsed)
   landingPage: 'Home', // page opened on load (a slug like 'Guides/Basics'); '' = generated home
   sidebarOrder: 'files', // 'files' (pages then folders) | 'folders' | 'alpha' (mixed alphabetical)

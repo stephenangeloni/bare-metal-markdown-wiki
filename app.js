@@ -240,21 +240,26 @@
       });
     } catch (e) {}
   }
+  let mermaidQueue = Promise.resolve();
+  function queueMermaid(job) { mermaidQueue = mermaidQueue.then(job).catch(function () {}); }
   function runMermaid(pageNode) {
     const nodes = [];
     pageNode.querySelectorAll('pre code.language-mermaid').forEach(function (code) {
       const div = document.createElement('div'); div.className = 'mermaid'; div.textContent = div.dataset.src = code.textContent;
       const pre = code.closest('pre'); pre.replaceWith(div); nodes.push(div);
     });
-    if (nodes.length && window.mermaid) { try { mermaid.run({ nodes: nodes }); } catch (e) {} }
+    if (nodes.length && window.mermaid) queueMermaid(function () { return mermaid.run({ nodes: nodes }); });
   }
   function redrawMermaid() { // mermaid bakes its theme into the SVG: when the mode flips, draw the page's diagrams again from their source
     const theme = currentMermaidTheme();
     if (theme === mermaidTheme) return;
-    mermaidTheme = theme; initMermaid(theme);
-    const nodes = Array.from(el('page').querySelectorAll('.mermaid'));
-    nodes.forEach(function (n) { n.removeAttribute('data-processed'); n.textContent = n.dataset.src; });
-    if (nodes.length && window.mermaid) { try { mermaid.run({ nodes: nodes }); } catch (e) {} }
+    mermaidTheme = theme;
+    queueMermaid(function () {
+      initMermaid(mermaidTheme);
+      const nodes = Array.from(el('page').querySelectorAll('.mermaid[data-src]'));
+      nodes.forEach(function (n) { n.removeAttribute('data-processed'); n.textContent = n.dataset.src; });
+      if (nodes.length && window.mermaid) return mermaid.run({ nodes: nodes });
+    });
   }
   function addCopyButtons(pageNode) {
     pageNode.querySelectorAll('pre').forEach(function (pre) {
@@ -301,7 +306,7 @@
     if (!links.length) return;
     const cTop = el('content').getBoundingClientRect().top;
     let cur = null; // links are in heading order: the last one already scrolled past the top edge wins
-    Array.prototype.forEach.call(links, function (l) { const h = document.getElementById(l.getAttribute('href').slice(1)); if (h && h.getBoundingClientRect().top - cTop <= 8) cur = l; });
+    Array.prototype.forEach.call(links, function (l) { const h = document.getElementById(l.getAttribute('href').slice(1)); if (h && h.getBoundingClientRect().top - cTop <= 20) cur = l; });
     Array.prototype.forEach.call(links, function (l) { l.classList.toggle('active', l === cur); });
   }
   function renderBacklinks(slug) {
