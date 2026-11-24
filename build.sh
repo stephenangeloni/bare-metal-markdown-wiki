@@ -23,10 +23,10 @@ json_str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\
     rel="${f#"$KB"/}"
     slug="${rel%.md}"
     mt="$(date -r "$f" +%s 2>/dev/null || stat -c %Y "$f")"
-    b64="$(base64 "$f" | tr -d '\n')"
+    b64="$(base64 < "$f" | tr -d '\n')"
     [ "$first" -eq 1 ] || printf ',\n'
     first=0
-    printf '  {slug:%s, mtime:%s, content:%s}' "$(json_str "$slug")" "$mt" "$(json_str "$b64")"
+    printf '  {slug:%s, mtime:%s, content:"%s"}' "$(json_str "$slug")" "$mt" "$b64"
   done < <(find "$KB" -type f -name '*.md' -print0 | sort -z)
   printf '\n];\n'
 } > "$OUT"
