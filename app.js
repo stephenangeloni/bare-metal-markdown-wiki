@@ -568,7 +568,7 @@
       const live = await loadLive(h);
       liveHandle = h; applyLive(live);
       try { await IDB.set('dir', h); } catch (e) {}
-      mode = 'live'; buildIndex(); renderSidebar(); renderTags(); setMode('live'); route();
+      mode = 'live'; buildIndex(); renderTags(); setMode('live'); closeNav(); showPage(shownPage); el('content').scrollTop = 0;
     } catch (e) { /* cancelled or permission denied */ }
   }
   async function refreshLive() {
@@ -576,9 +576,10 @@
     const now = Date.now(); if (now - lastRefresh < 1500) return false; lastRefresh = now;
     busy = true;
     try {
-      if ((await liveHandle.queryPermission({ mode: 'read' })) !== 'granted') return false;
-      const live = await loadLive(liveHandle);
-      if (editing) return false;
+      const h = liveHandle;
+      if ((await h.queryPermission({ mode: 'read' })) !== 'granted') return false;
+      const live = await loadLive(h);
+      if (editing || liveHandle !== h) return false;
       applyLive(live);
       const scroll = el('content').scrollTop;
       buildIndex(); renderTags(); setMode('live'); showPage(shownPage);
@@ -631,6 +632,8 @@
       editMsg(r.error ? 'Could not save: ' + r.error.message : 'Someone else changed this page while you were editing. Your text is still in the box: copy it, press Cancel to see their version, then edit again.');
       return;
     }
+    while (busy) await new Promise(function (res) { setTimeout(res, 100); });
+    if (editing !== ed) return;
     editing = null; lastRefresh = 0;
     if (!(await refreshLive()) && !editing) showPage(shownPage);
   }

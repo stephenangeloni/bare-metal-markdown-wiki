@@ -106,11 +106,11 @@ function makeApp(opts) {
   const pageEl = mk();
   Object.defineProperty(pageEl, 'innerHTML', {
     get() { return html; },
-    set(v) { html = v; editorEls = v.indexOf('id="editText"') !== -1 ? { editText: mk(), editMsg: mk() } : null; }
+    set(v) { html = v; editorEls = {}; ['editText', 'editMsg', 'editSave', 'editCancel'].forEach(function (id) { if (v.indexOf('id="' + id + '"') !== -1) editorEls[id] = mk(); }); }
   });
   const env = {
     location: { hash: opts.hash || '' }, document: { hidden: false, title: '' }, landingPage: opts.landingPage || '', label: '', pick: null,
-    el(id) { if (id === 'page') return pageEl; if (id === 'editText' || id === 'editMsg') return editorEls && editorEls[id]; return els[id] || (els[id] = mk()); }
+    el(id) { if (id === 'page') return pageEl; if (/^edit(Text|Msg|Save|Cancel)$/.test(id)) return (editorEls && editorEls[id]) || null; return els[id] || (els[id] = mk()); }
   };
   const app = factory(env);
   return {
@@ -309,6 +309,182 @@ test('saving a page that is not UTF-8 does not destroy the characters it could n
   await w.app.openEditor();
   if (w.editor()) { w.editor().value += 'one more line\n'; await w.app.saveEditor(); }
   if (!tree['Legacy.md'].bytes.includes(0xE9)) throw new Error('bytes on disk: ' + tree['Legacy.md'].bytes.toString('hex') + ' (e9 became ef bf bd)');
+});
+
+// ---------- save, reload and folder-switch interleavings ----------
+
+function t(name, fn) { test(name, async function () { const bad = await fn(); if (bad.length) throw new Error(bad.join('\n  ')); }); }
+function gateStamp(f) { // lets a folder walk read every entry, then holds it open until release()
+  const orig = f.root.values.bind(f.root); const g = { on: false, waiters: [] };
+  f.root.values = async function* () { yield* orig(); if (g.on) await new Promise(function (r) { g.waiters.push(r); }); };
+  g.release = function () { g.on = false; g.waiters.splice(0).forEach(function (r) { r(); }); };
+  return g;
+}
+
+t('a second Save click while the first is in flight writes nothing and the editor is locked', async function () {
+  const tree = { 'A.md': page('a') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a edited';
+  f.ctl.holdWrite.add('A.md');
+  const s1 = w.app.saveEditor(); await settle();
+  const s2 = w.app.saveEditor(); await settle();
+  const bad = [];
+  check(bad, f.ctl.pendingWrites.length === 1, 'writes in flight: ' + f.ctl.pendingWrites.length);
+  check(bad, w.editor().readOnly === true, 'textarea not read-only');
+  check(bad, w.env.el('editSave').disabled === true && w.env.el('editCancel').disabled === true, 'buttons not disabled');
+  f.releaseAll(); await s1; await s2; await settle();
+  check(bad, textOf(tree['A.md']) === 'a edited', 'disk: ' + textOf(tree['A.md']));
+  check(bad, !w.editor() && !w.app.editing && w.screen().includes('| a edited'), 'screen: ' + w.screen());
+  return bad;
+});
+
+t('a refused save unlocks the editor again', async function () {
+  const tree = { 'A.md': page('a') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'mine';
+  tree['A.md'] = page('theirs'); await w.app.saveEditor();
+  const bad = [];
+  check(bad, w.editor() && w.editor().readOnly === false, 'textarea still read-only');
+  check(bad, w.env.el('editSave').disabled === false && w.env.el('editCancel').disabled === false, 'buttons still disabled');
+  check(bad, w.app.editing && w.app.editing.saving === false, 'saving flag still set');
+  return bad;
+});
+
+t('a write that throws unlocks the editor and says so', async function () {
+  const tree = { 'A.md': page('a') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'mine';
+  f.ctl.failOnce.add('A.md');                                  // saveFile's own read of the current file fails
+  await w.app.saveEditor();
+  const bad = [];
+  check(bad, w.editor() && w.editor().value === 'mine' && w.editor().readOnly === false, 'editor lost or locked');
+  check(bad, /^Could not save/.test(w.msg() || ''), 'message: ' + w.msg());
+  check(bad, textOf(tree['A.md']) === 'a', 'disk: ' + textOf(tree['A.md']));
+  await w.app.saveEditor();                                    // retry works
+  check(bad, textOf(tree['A.md']) === 'mine', 'retry did not write; disk: ' + textOf(tree['A.md']));
+  return bad;
+});
+
+t('leaving during the write does not throw (lockEditor is not called on a missing editor) and the save is picked up by the next poll', async function () {
+  const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a edited';
+  f.ctl.holdWrite.add('A.md');
+  const save = w.app.saveEditor(); await settle();
+  w.go('#B');                                                  // user walks away mid-write
+  f.releaseAll(); await save; await settle();                  // an exception in saveEditor would reject here
+  const bad = [];
+  check(bad, w.screen().startsWith('PAGE B'), 'screen: ' + w.screen());
+  await w.app.pollLive(); w.go('#A');
+  check(bad, w.screen().includes('| a edited'), 'A after poll: ' + w.screen());
+  return bad;
+});
+
+t('while the reload after a save is still reading, a draft started on another page survives', async function () {
+  const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a edited';
+  const hold = gateStamp(f); hold.on = true;                   // the reload's folder walk stalls
+  const save = w.app.saveEditor(); await settle();
+  const bad = [];
+  check(bad, textOf(tree['A.md']) === 'a edited', 'disk: ' + textOf(tree['A.md']));
+  w.go('#B'); await settle();
+  await w.app.openEditor();
+  check(bad, !!w.editor(), 'could not open B while the reload was in flight');
+  if (w.editor()) w.editor().value = 'draft B';
+  hold.release(); await save; await settle();
+  check(bad, w.editor() && w.editor().value === 'draft B', 'B draft: ' + (w.editor() ? w.editor().value : 'gone; screen ' + w.screen()));
+  check(bad, w.app.editing && w.app.editing.slug === 'B', 'editing = ' + JSON.stringify(w.app.editing));
+  return bad;
+});
+
+t('busy is released after a failed stamp check and after a failed reload', async function () {
+  const tree = { 'Home.md': page('v1'), 'Other.md': page('o') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  const orig = f.root.values.bind(f.root); let boom = 1;
+  f.root.values = async function* () { if (boom-- > 0) throw new Error('NetworkError'); yield* orig(); };
+  await w.app.pollLive();                                      // stamp check throws
+  tree['Home.md'] = page('v2'); f.ctl.failOnce.add('Other.md');
+  await w.app.pollLive();                                      // reload throws
+  const ok = await w.app.forceRefresh();                       // the refresh button must still work
+  const bad = [];
+  check(bad, ok === true, 'refresh returned ' + ok + ' (busy stuck?)');
+  check(bad, w.screen().includes('| v2'), 'screen: ' + w.screen());
+  return bad;
+});
+
+t('Edit pressed twice on a slow drive opens one editor and keeps what was typed', async function () {
+  const tree = { 'A.md': page('a') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  f.ctl.hold.add('A.md');
+  const o1 = w.app.openEditor(); await settle();
+  const o2 = w.app.openEditor(); await settle();
+  f.releaseOne('A.md'); await o1; await settle();
+  w.editor().value = 'typed';
+  f.releaseAll(); await o2; await settle();
+  return w.editor() && w.editor().value === 'typed' ? [] : ['editor: ' + (w.editor() && w.editor().value)];
+});
+
+t('a reload of folder A that finishes after a switch to folder B must not put A back on screen', async function () {
+  const treeA = { 'Home.md': page('A home'), 'Slow.md': page('s') }; const a = fakeFolder('A', treeA);
+  const treeB = { 'Home.md': page('B home') }; const b = fakeFolder('B', treeB);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  a.ctl.hold.add('Slow.md');
+  const r = w.app.forceRefresh(); await settle();              // focus or the refresh button; A is slow
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder();                                  // user switches to B meanwhile
+  const bad = [];
+  check(bad, w.screen().includes('B home'), 'right after the switch: ' + w.screen());
+  a.releaseAll(); await r; await settle();                     // A's reload finishes
+  check(bad, w.screen().includes('B home'), 'topbar says ' + w.env.label + ', edits go to ' + w.app.handle + ', screen shows: ' + w.screen());
+  check(bad, !w.app.pages.Slow, 'index holds A\'s pages: ' + Object.keys(w.app.pages));
+  await w.app.pollLive();
+  if (bad.length) bad.push('(after the next poll: ' + w.screen() + ')');
+  return bad;
+});
+
+t('switching folder after a footnote click must show the new folder', async function () {
+  const treeA = { 'Home.md': page('A home') }; const a = fakeFolder('A', treeA);
+  const treeB = { 'Home.md': page('B home') }; const b = fakeFolder('B', treeB);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  w.go('#fn-1');
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder();
+  const bad = [];
+  check(bad, w.screen().includes('B home'), 'topbar says ' + w.env.label + ', screen shows: ' + w.screen());
+  await w.app.pollLive(); await w.app.pollLive();
+  if (bad.length) bad.push('(after two more polls: ' + w.screen() + ')');
+  return bad;
+});
+
+t('switching folder after a footnote click while an editor is open must not leave that editor pointed at the new folder', async function () {
+  const treeA = { 'Home.md': page('same') }; const a = fakeFolder('A', treeA);
+  const treeB = { 'Home.md': page('same') }; treeB['Home.md'].modified = treeA['Home.md'].modified; const b = fakeFolder('B', treeB); // e.g. a copy of the folder
+  const w = makeApp({ hash: '#Home' }); await w.app.start(a.root);
+  w.go('#fn-1');
+  await w.app.openEditor(); w.editor().value = 'meant for A';
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder();
+  if (w.editor()) await w.app.saveEditor();
+  const bad = [];
+  check(bad, textOf(treeB['Home.md']) === 'same', 'B/Home.md on disk is now ' + JSON.stringify(textOf(treeB['Home.md'])) + '; A/Home.md is ' + JSON.stringify(textOf(treeA['Home.md'])));
+  return bad;
+});
+
+t('Save pressed while an earlier reload is still reading must not show the old text as the result', async function () {
+  const tree = { 'Home.md': page('v1'), 'Slow.md': page('s') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  f.ctl.hold.add('Slow.md');
+  const r = w.app.forceRefresh(); await settle();              // reload in flight: Home.md already read, stuck on Slow.md
+  await w.app.openEditor(); w.editor().value = 'v2'; const s = w.app.saveEditor(); await settle();
+  const bad = [];
+  check(bad, textOf(tree['Home.md']) === 'v2', 'disk: ' + textOf(tree['Home.md']));
+  check(bad, !w.screen().includes('| v1'), 'right after Save the screen shows: ' + w.screen());
+  f.releaseAll(); await r; await s; await settle();
+  check(bad, w.screen().includes('| v2'), 'after the earlier reload finished: ' + w.screen());
+  await w.app.pollLive();
+  if (bad.length) bad.push('(after the next poll: ' + w.screen() + ')');
+  return bad;
 });
 
 (async function () {
