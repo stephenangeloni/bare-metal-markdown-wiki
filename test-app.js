@@ -4,27 +4,15 @@
 'use strict';
 global.window = global;
 
-const fs = require('fs');
-const path = require('path');
 const MarkdownIt = require('./vendor/markdown-it.min.js');
 require('./vendor/mdit-extras.js');
 const md = new MarkdownIt({ html: true, linkify: true });
 global.md = md;
 
-const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-function grab(name) {
-  const i = src.indexOf('function ' + name);
-  if (i < 0) throw new Error('app.js: function ' + name + ' not found');
-  let d = 0;
-  for (let j = i; j < src.length; j++) {
-    if (src[j] === '{') d++;
-    else if (src[j] === '}') { d--; if (!d) return src.slice(i, j + 1); }
-  }
-  throw new Error('unbalanced braces in ' + name);
-}
+const grab = require('./test-grab.js');
 const STEMS = {};
 global.STEM = {}; global.PAGES = {};
-(0, eval)([grab('escapeHtml'), grab('markHits'), grab('resolveSlug'), grab('outsideCode'), grab('normalizeParts'), grab('absPath'), grab('extRe'),
+(0, eval)([grab('escapeHtml'), grab('markHits'), grab('resolveSlug'), grab('outsideCode'), grab('WIKI_LINK_RE'), grab('normalizeParts'), grab('absPath'), grab('extRe'),
            grab('wikiLinks'), grab('withFootnotes'), grab('isSearchShortcut'), grab('usesDarkScheme'), grab('nextTheme')].join('\n') + '\n;global.nextTheme=nextTheme;global.isSearchShortcut=isSearchShortcut;global.usesDarkScheme=usesDarkScheme;global.withFootnotes=withFootnotes;global.wikiLinks=wikiLinks;global.absPath=absPath;global.extRe=extRe;global.markHits=markHits;');
 ['Home', 'Guides/Basics', 'Guides/Nope'].forEach(function (s) {
   global.PAGES[s] = { slug: s };

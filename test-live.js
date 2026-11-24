@@ -1,20 +1,8 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-function grab(name) {
-  const m = new RegExp('(async )?function ' + name + '\\(').exec(src);
-  if (!m) throw new Error('app.js: function ' + name + ' not found');
-  let d = 0;
-  for (let j = m.index; j < src.length; j++) {
-    if (src[j] === '{') d++;
-    else if (src[j] === '}') { d--; if (!d) return src.slice(m.index, j + 1); }
-  }
-  throw new Error('unbalanced braces in ' + name);
-}
-const GRABBED = ['parseFrontmatter', 'buildIndex', 'renderLanding', 'route', 'loadLive', 'folderStamp', 'fileAt', 'readForEdit', 'saveFile',
+const grab = require('./test-grab.js');
+const GRABBED = ['titleOf', 'parseFrontmatter', 'buildIndex', 'renderLanding', 'route', 'loadLive', 'folderStamp', 'fileAt', 'readForEdit', 'saveFile',
   'applyLive', 'showPage', 'walkDir', 'showFolder', 'chooseFolder', 'refreshLive', 'pollLive', 'editMsg', 'lockEditor', 'openEditor', 'saveEditor', 'cancelEditor'].map(grab).join('\n');
 
 const factory = (0, eval)(`(function (env) {
@@ -803,7 +791,7 @@ t('a save of A/Home that lands after a switch to B does not put A\'s text into B
 
 function sidebarHtml(shown, hash) {
   const tree = { innerHTML: '' };
-  const fn = grab('renderSidebar');
+  const fn = grab('taggedSlugs') + grab('renderSidebar');
   const f = (0, eval)('(function (tree, location, shownPage) { const PAGES = { "guides/setup": { folder: "guides", tags: [], title: "Setup" }, Home: { folder: "", tags: [], title: "Home" } }; const activeTag = "", landingPage = "", foldersOpen = false, sidebarOrder = "files"; function el() { return tree; } function escapeHtml(s) { return s; } function titleOf(s) { return PAGES[s].title; } function markActive() {} ' + fn + ' renderSidebar(); })');
   f(tree, { hash: hash }, shown);
   return tree.innerHTML;

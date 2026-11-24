@@ -53,15 +53,17 @@
   let shownPage = '';
   let loading = null;
   let tocHtml = '';            // current page's TOC, injected into the sidebar or rail
-  let tocSide = (WIKI.tocSide === 'right') ? 'right' : 'left'; // from the settings in config.js
+  const tocSide = (WIKI.tocSide === 'right') ? 'right' : 'left'; // from the settings in config.js
   const narrowMq = window.matchMedia('(max-width: 760px)'); // drawer breakpoint — keep in sync with the @media block in style.css
-  let tocLevels = Math.min(6, Math.max(1, parseInt(WIKI.tocLevels, 10) || 3)); // TOC heading depth, 1–6
-  let foldersOpen = WIKI.foldersOpen === true; // start with the sidebar folders expanded
-  let landingPage = typeof WIKI.landingPage === 'string' ? WIKI.landingPage : ''; // page opened at empty hash; '' = generated home
-  let sidebarOrder = (WIKI.sidebarOrder === 'folders' || WIKI.sidebarOrder === 'alpha') ? WIKI.sidebarOrder : 'files'; // 'folders' | 'files' | 'alpha'
-  document.documentElement.style.setProperty('--page-w', Math.min(100, Math.max(10, parseInt(WIKI.pageWidth, 10) || 70)) + '%'); // article width cap, 10–100%
-  document.documentElement.style.setProperty('--search-w', Math.min(100, Math.max(10, parseInt(WIKI.searchWidth, 10) || 50)) + '%'); // search panel width, 10–100% of the window
-  document.documentElement.style.setProperty('--search-h', Math.min(100, Math.max(10, parseInt(WIKI.searchHeight, 10) || 60)) + 'vh'); // search panel max height, 10–100% of the window
+  function intSetting(v, lo, hi, def) { return Math.min(hi, Math.max(lo, parseInt(v, 10) || def)); }
+  const tocLevels = intSetting(WIKI.tocLevels, 1, 6, 3); // TOC heading depth, 1–6
+  const foldersOpen = WIKI.foldersOpen === true; // start with the sidebar folders expanded
+  const landingPage = typeof WIKI.landingPage === 'string' ? WIKI.landingPage : ''; // page opened at empty hash; '' = generated home
+  const sidebarOrder = (WIKI.sidebarOrder === 'folders' || WIKI.sidebarOrder === 'alpha') ? WIKI.sidebarOrder : 'files'; // 'folders' | 'files' | 'alpha'
+  const maxResults = intSetting(WIKI.maxResults, 1, Infinity, 200);
+  document.documentElement.style.setProperty('--page-w', intSetting(WIKI.pageWidth, 10, 100, 70) + '%'); // article width cap, 10–100%
+  document.documentElement.style.setProperty('--search-w', intSetting(WIKI.searchWidth, 10, 100, 50) + '%'); // search panel width, 10–100% of the window
+  document.documentElement.style.setProperty('--search-h', intSetting(WIKI.searchHeight, 10, 100, 60) + 'vh'); // search panel max height, 10–100% of the window
   const wikiName = (typeof WIKI.wikiName === 'string' && WIKI.wikiName.trim()) ? WIKI.wikiName.trim() : 'Local Wiki'; // shown in topbar + tab titles
   document.querySelector('.brand-name').textContent = wikiName;
   if (typeof WIKI.brandIcon === 'string') { // unset keeps the built-in mark; '' hides it; any other text replaces it
@@ -119,7 +121,6 @@
   function buildIndex() {
     PAGES = {}; STEM = {};
     RAW.forEach(function (p) {
-      if (p.src === undefined) p.src = p.content;
       const fm = parseFrontmatter(p.src);
       const folder = p.slug.indexOf('/') !== -1 ? p.slug.slice(0, p.slug.lastIndexOf('/')) : '';
       const stemFile = p.slug.split('/').pop();
@@ -128,16 +129,19 @@
       if (!title) { const h1 = fm.body.match(/^#\s+(.+)$/m); title = h1 ? h1[1].trim() : ''; }
       if (!title) title = stemFile.replace(/\.md$/i, '').replace(/[-_]+/g, ' ').trim();
       p.title = title;
+      p.haystack = (title + ' ' + fm.body).toLowerCase();
+      p.plain = fm.body.replace(/[#*`>\[\]_~]/g, ' ').replace(/\s+/g, ' ');
       PAGES[p.slug] = p;
       (STEM[stemFile.toLowerCase()] = STEM[stemFile.toLowerCase()] || []).push(p.slug);
     });
     for (const slug in PAGES) PAGES[slug].links = outLinks(PAGES[slug]);
   }
+  const WIKI_LINK_RE = /\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]/g;
   function outLinks(p) {
     const set = new Set();
     outsideCode(p.content, function (s) { // mentions inside code do not create backlinks
-      let m; const w = /\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]/g;
-      while ((m = w.exec(s))) { const slug = resolveSlug(m[1].trim()); if (slug) set.add(slug); }
+      let m;
+      while ((m = WIKI_LINK_RE.exec(s))) { const slug = resolveSlug(m[1].trim()); if (slug) set.add(slug); }
       const l = /\]\(([^)]+)\)/g;
       while ((m = l.exec(s))) { const t = m[1].trim(); if (/\.md($|#|\?)/i.test(t)) { const slug = resolveMdPath(t, p.folder); if (slug) set.add(slug); } }
       return s;
@@ -162,7 +166,7 @@
   }
   function wikiLinks(src) {
     return outsideCode(src, function (s) {
-      return s.replace(/\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]/g, function (m, target, display) {
+      return s.replace(WIKI_LINK_RE, function (m, target, display) {
         const t = target.trim();
         const label = (display ? display.trim() : t).replace(/\.md$/i, '');
         const slug = resolveSlug(t);
@@ -347,18 +351,20 @@
     renderBacklinks(slug);
   }
 
+  function taggedSlugs() { return Object.keys(PAGES).filter(function (s) { return !activeTag || PAGES[s].tags.indexOf(activeTag) !== -1; }); }
+
   // ---------- home ----------
   function renderHome() {
     const page = el('page'); tocHtml = ''; el('backlinks').innerHTML = ''; placeToc();
     page.classList.add('home');
-    const slugs = Object.keys(PAGES).filter(function (s) { return !activeTag || PAGES[s].tags.indexOf(activeTag) !== -1; });
+    const slugs = taggedSlugs();
     const byFolder = {};
     slugs.forEach(function (s) { const f = PAGES[s].folder || '(root)'; (byFolder[f] = byFolder[f] || []).push(s); });
     if (!Object.keys(PAGES).length) {
       page.innerHTML = '<h1>Home</h1><p class="meta">No pages yet. Add <code>.md</code> files to <code>articles/</code> and run the build, or use <b>Live render</b>.</p>';
       return;
     }
-    const recent = Object.values(PAGES).filter(function (p) { return !activeTag || p.tags.indexOf(activeTag) !== -1; }).sort(function (a, b) { return b.mtime - a.mtime; }).slice(0, 8);
+    const recent = slugs.map(function (s) { return PAGES[s]; }).sort(function (a, b) { return b.mtime - a.mtime; }).slice(0, 8);
     let html = '<h1>' + (activeTag ? 'Tagged: ' + escapeHtml(activeTag) : 'Home') + '</h1>';
     html += '<h2>Recent</h2><ul class="recent">' + recent.map(function (p) {
       return '<li><a href="#' + encodeURIComponent(p.slug) + '">' + escapeHtml(p.title) + '</a> <span class="meta">' + new Date(p.mtime * 1000).toLocaleDateString() + '</span></li>';
@@ -377,7 +383,7 @@
   // ---------- sidebar / tags ----------
   function renderSidebar() {
     const tree = el('tree');
-    const slugs = Object.keys(PAGES).filter(function (s) { return !activeTag || PAGES[s].tags.indexOf(activeTag) !== -1; });
+    const slugs = taggedSlugs();
     const root = { pages: [], subs: {} }; // nested tree: folder -> its pages + subfolders
     slugs.forEach(function (s) {
       const parts = PAGES[s].folder ? PAGES[s].folder.split('/') : [];
@@ -423,13 +429,12 @@
     else document.querySelector('.topbar').appendChild(g); // it was the last group already
   }
   function markActive() {
-    const slug = shownPage;
     const tree = el('tree');
     const links = Array.prototype.slice.call(tree.querySelectorAll('a'));
-    links.forEach(function (a) { a.classList.toggle('active', a.dataset.slug === slug); });
+    links.forEach(function (a) { a.classList.toggle('active', a.dataset.slug === shownPage); });
     tree.querySelectorAll('.page-toc').forEach(function (n) { n.remove(); });
-    if (slug && tocHtml && (tocSide === 'left' || narrowMq.matches)) { // narrow: the right rail is gone, the TOC follows the drawer instead
-      const act = links.find(function (a) { return a.dataset.slug === slug; });
+    if (shownPage && tocHtml && (tocSide === 'left' || narrowMq.matches)) { // narrow: the right rail is gone, the TOC follows the drawer instead
+      const act = links.find(function (a) { return a.dataset.slug === shownPage; });
       if (act) act.insertAdjacentHTML('afterend', tocHtml); // TOC sits directly under the file name
     }
     markTocPosition();
@@ -455,8 +460,7 @@
     }
     return out + escapeHtml(text.slice(i));
   }
-  function snippet(content, q) {
-    const t = content.replace(/[#*`>\[\]_~]/g, ' ').replace(/\s+/g, ' ');
+  function snippet(t, q) {
     const i = t.toLowerCase().indexOf(q);
     return i < 0 ? t.slice(0, 120) : t.slice(Math.max(0, i - 40), i + 90);
   }
@@ -464,11 +468,11 @@
     q = q.trim().toLowerCase(); const box = el('searchResults');
     el('clearSearch').classList.toggle('show', q.length > 0); // own ✕ button — Firefox has no native one
     if (!q) { box.classList.add('hidden'); return; }
-    const max = Math.max(1, parseInt(WIKI.maxResults, 10) || 200);
-    const all = Object.keys(PAGES).filter(function (s) { return (PAGES[s].title + ' ' + PAGES[s].content).toLowerCase().indexOf(q) !== -1; });
+    const max = maxResults;
+    const all = Object.keys(PAGES).filter(function (s) { return PAGES[s].haystack.indexOf(q) !== -1; });
     const hits = all.slice(0, max);
     box.innerHTML = hits.length ? hits.map(function (s) {
-      return '<a href="#' + encodeURIComponent(s) + '"><span class="crumb">' + markHits((PAGES[s].folder ? PAGES[s].folder + ' / ' : '') + PAGES[s].title, q) + '</span>' + markHits(snippet(PAGES[s].content, q), q) + '</a>';
+      return '<a href="#' + encodeURIComponent(s) + '"><span class="crumb">' + markHits((PAGES[s].folder ? PAGES[s].folder + ' / ' : '') + PAGES[s].title, q) + '</span>' + markHits(snippet(PAGES[s].plain, q), q) + '</a>';
     }).join('') : '<a>&mdash; no results &mdash;</a>';
     if (all.length > max) box.innerHTML += '<div class="search-note">' + all.length + ' matches &mdash; showing the first ' + max + '. Edit <code>maxResults</code> in config.js to see more.</div>';
     box.classList.remove('hidden');
@@ -479,14 +483,13 @@
     const e = el('mode');
     e.textContent = m === 'live' ? ('live · ' + (liveHandle ? liveHandle.name : 'folder')) : 'bundled · data.js';
     e.className = 'mode' + (m === 'live' ? ' live' : '');
-    const r = el('refresh'); if (r) r.classList.toggle('hidden', m !== 'live');
+    el('refresh').classList.toggle('hidden', m !== 'live');
   }
 
   // ---------- routing ----------
   function closeNav() { // narrow-screen drawer: close it (also a harmless no-op on wide screens)
     document.body.classList.remove('nav-open');
-    const b = el('menuBtn');
-    if (b) b.setAttribute('aria-expanded', 'false');
+    el('menuBtn').setAttribute('aria-expanded', 'false');
   }
   function renderLanding() { // what the empty hash shows: the configured page, else the generated home
     if (landingPage && PAGES[landingPage]) { renderPage(landingPage); return PAGES[landingPage].title; }
@@ -504,18 +507,18 @@
     shownPage = slug; editing = null;
     el('page').classList.remove('home');
     if (!slug) { document.title = renderLanding() + ' — ' + wikiName; }
-    else { renderPage(slug); document.title = (PAGES[slug] ? PAGES[slug].title : slug) + ' — ' + wikiName; }
+    else { renderPage(slug); document.title = titleOf(slug) + ' — ' + wikiName; }
     renderSidebar(); // re-renders with the active page's folder chain open; ends with markActive()
   }
 
   // ---------- loaders ----------
   function loadBundled() {
-    RAW = (window.PAGES_BUNDLED || []).map(function (p) { return { slug: p.slug, mtime: p.mtime, content: b64toUtf8(p.content) }; });
+    RAW = (window.PAGES_BUNDLED || []).map(function (p) { return { slug: p.slug, mtime: p.mtime, src: b64toUtf8(p.content) }; });
     IMAGES = {};
   }
   async function loadLive(handle) {
-    const live = { stamp: await folderStamp(handle), raw: [], images: {} };
-    await walkDir(handle, '', live.raw, live.images);
+    const live = { stamp: '', raw: [], images: {} };
+    await walkDir(handle, '', live);
     return live;
   }
   function applyLive(live) { liveStamp = live.stamp; RAW = live.raw; IMAGES = live.images; }
@@ -554,27 +557,26 @@
     return new RegExp('\\.(' + (ok.length ? ok.join('|') : 'png|jpg|jpeg|gif|svg|webp') + ')$', 'i');
   }
   const imgExtRe = extRe(WIKI.imageExts); // bundled mode has no filter at all — the browser paints any format it supports
-  async function walkDir(handle, prefix, acc, images) {
+  async function walkDir(handle, prefix, live) { // same files and order as folderStamp, so the stamp comes from this one pass
     for await (const e of handle.values()) {
-      if (e.kind === 'file') {
-        if (/\.md$/i.test(e.name)) {
-          const f = await e.getFile();
-          acc.push({ slug: (prefix + e.name).replace(/\.md$/i, ''), path: prefix + e.name, mtime: Math.floor(f.lastModified / 1000), content: await f.text() });
-        } else if (imgExtRe.test(e.name)) {
-          images[prefix + e.name] = await fileToDataURI(await e.getFile(), e.name);
-        }
-      } else if (e.kind === 'directory') {
-        await walkDir(e, prefix + e.name + '/', acc, images);
-      }
+      if (e.kind === 'directory') { await walkDir(e, prefix + e.name + '/', live); continue; }
+      const isPage = /\.md$/i.test(e.name);
+      if (!isPage && !imgExtRe.test(e.name)) continue;
+      const f = await e.getFile();
+      live.stamp += prefix + e.name + ':' + f.lastModified + '\n';
+      if (isPage) live.raw.push({ slug: (prefix + e.name).replace(/\.md$/i, ''), path: prefix + e.name, mtime: Math.floor(f.lastModified / 1000), src: await f.text() });
+      else live.images[prefix + e.name] = await fileToDataURI(f, e.name);
     }
   }
   async function fileToDataURI(f, name) {
     const ext = name.split('.').pop().toLowerCase();
     const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' ? 'image/jpeg' : 'image/' + ext;
-    const u8 = new Uint8Array(await f.arrayBuffer());
-    let bin = '';
-    for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
-    return 'data:' + mime + ';base64,' + btoa(bin);
+    return new Promise(function (res, rej) {
+      const r = new FileReader();
+      r.onload = function () { res(r.result); };
+      r.onerror = function () { rej(r.error); };
+      r.readAsDataURL(f.slice(0, f.size, mime));
+    });
   }
   const IDB = {
     db: null,
@@ -674,7 +676,7 @@
   // ---------- init ----------
   async function init() {
     el('refresh').addEventListener('click', refreshLive);
-    window.addEventListener('focus', function () { if (!loading) refreshLive(); }); // re-read live folder when the tab regains focus
+    window.addEventListener('focus', pollLive); // re-read live folder when the tab regains focus, if anything in it changed
     setInterval(pollLive, 5000);
     el('search').addEventListener('input', function (e) { doSearch(e.target.value); });
     const themeBtn = el('themeBtn');

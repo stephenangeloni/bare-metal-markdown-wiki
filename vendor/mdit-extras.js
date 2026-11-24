@@ -132,6 +132,10 @@
         // pre-render the title here — renderer rules have no access to md
         tokens[i].info = md.renderInline((m[2] || '').trim() || ALERT_NAMES[name]);
         t.content = t.content.slice(firstLine.length); // drop the marker line
+        for (var k = i + 1, depth = 1; k < tokens.length; k++) { // tag the matching close (blockquotes can nest)
+          if (tokens[k].type === 'blockquote_open') depth++;
+          else if (tokens[k].type === 'blockquote_close' && --depth === 0) { tokens[k].alertClose = true; break; }
+        }
       }
     });
 
@@ -145,17 +149,8 @@
       return origOpen ? origOpen(tokens, idx, options, env, self) : '<blockquote>\n';
     };
 
-    md.renderer.rules.blockquote_close = function (tokens, idx, options, env, self) {
-      // walk back to the matching open (blockquotes can nest)
-      var depth = 1, j = idx - 1;
-      while (j >= 0) {
-        if (tokens[j].type === 'blockquote_open') depth--;
-        else if (tokens[j].type === 'blockquote_close') depth++;
-        if (depth === 0) break;
-        j--;
-      }
-      var isAlert = j >= 0 && (tokens[j].attrGet('class') || '').indexOf('markdown-alert') === 0;
-      return isAlert ? '</div>\n' : '</blockquote>\n';
+    md.renderer.rules.blockquote_close = function (tokens, idx) {
+      return tokens[idx].alertClose ? '</div>\n' : '</blockquote>\n';
     };
   }
 
@@ -164,10 +159,6 @@
      are ::: tab: Name containers becomes a button bar + panes.
      The first pane is visible; switching is a few lines of
      delegated click handling in app.js. */
-  function escHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
   function tabs(md) {
     // runs after block parsing: tag the child tab containers of every
     // ::: tabs group so the container renderer can emit bar + panes
@@ -196,7 +187,6 @@
           tab.token.tabPane = true;
           tab.token.tabIndex = n;
           tab.html = state.md.renderInline(tab.name); // titles get inline markdown: badges, bold, …
-          tab.token.info = ''; // pane class is emitted by the renderer
         });
       }
     });
@@ -251,7 +241,7 @@
       // the first word decides the color: @{draft review} → yellow
       var k = LOOKUP[tokens[idx].content.toLowerCase().split(/[\s\-/]+/)[0]];
       if (k) cls += ' badge--' + k;
-      return '<span class="' + cls + '">' + escHtml(tokens[idx].content) + '</span>';
+      return '<span class="' + cls + '">' + md.utils.escapeHtml(tokens[idx].content) + '</span>';
     };
   }
 

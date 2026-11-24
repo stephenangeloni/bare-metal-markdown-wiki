@@ -608,7 +608,7 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
 .tab-pane[hidden] { display: none; }
 
 /* Inline badges: @{ name } (vendor/mdit-extras.js). Known status words
-   get a color (see BADGE_COLORS in the vendor file); anything else stays
+   get a color (see DEFAULT_BADGE_COLORS in the vendor file); anything else stays
    the neutral gray pill. */
 .badge {
   display: inline-block;
@@ -623,11 +623,12 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
   white-space: nowrap;
   vertical-align: 1px;
 }
-.badge--green  { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
-.badge--yellow { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
-.badge--red    { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
-.badge--blue   { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
-.badge--purple { color: var(--purple); background: color-mix(in srgb, var(--purple) 12%, transparent); border-color: color-mix(in srgb, var(--purple) 40%, transparent); }
+.badge--green  { --c: var(--ok); }
+.badge--yellow { --c: var(--warn); }
+.badge--red    { --c: var(--danger); }
+.badge--blue   { --c: var(--accent); }
+.badge--purple { --c: var(--purple); }
+.badge[class*="badge--"] { color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); border-color: color-mix(in srgb, var(--c) 40%, transparent); }
 
 /* GitHub-style alerts: > [!NOTE] etc (vendor/mdit-extras.js).
    Colors + icons are the official GitHub palette; the icons are

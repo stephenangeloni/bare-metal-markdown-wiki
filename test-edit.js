@@ -1,19 +1,7 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
-function grab(name) {
-  const i = src.indexOf('async function ' + name);
-  if (i < 0) throw new Error('app.js: async function ' + name + ' not found');
-  let d = 0;
-  for (let j = i; j < src.length; j++) {
-    if (src[j] === '{') d++;
-    else if (src[j] === '}') { d--; if (!d) return src.slice(i, j + 1); }
-  }
-  throw new Error('unbalanced braces in ' + name);
-}
+const grab = require('./test-grab.js');
 const api = (0, eval)('(function () { const imgExtRe = /\\.png$/i;' + ['fileAt', 'readForEdit', 'saveFile', 'folderStamp'].map(grab).join('\n') +
   '\nreturn { readForEdit: readForEdit, saveFile: saveFile, folderStamp: folderStamp }; })()');
 
