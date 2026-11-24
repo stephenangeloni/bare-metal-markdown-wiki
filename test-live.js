@@ -816,6 +816,31 @@ t('a redraw after a footnote click keeps the shown page\'s folder open in the si
   return bad;
 });
 
+t('a save that returns after someone else overwrote the page and a reload showed it: the next poll shows theirs', async function () {
+  const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'mine';
+  const orig = f.root.getFileHandle.bind(f.root); let release = null;
+  f.root.getFileHandle = async function (n) {
+    const fh = await orig(n); const get = fh.getFile.bind(fh); let calls = 0;
+    fh.getFile = async function () { if (++calls === 2) await new Promise(function (res) { release = res; }); return get(); };
+    return fh;
+  };
+  const s = w.app.saveEditor(); await settle();
+  const bad = [];
+  check(bad, textOf(tree['A.md']) === 'mine' && typeof release === 'function', 'setup: the write should be on disk with saveFile still waiting; disk ' + textOf(tree['A.md']));
+  f.root.getFileHandle = orig;
+  w.go('#B');
+  tree['A.md'].bytes = Buffer.from('theirs'); tree['A.md'].modified = ++clock;
+  const ok = await w.app.forceRefresh();
+  check(bad, ok === true && w.app.pages.A.content === 'theirs', 'setup: the reload should show theirs; refresh ' + ok + ', index ' + w.app.pages.A.content);
+  release(); await s; await settle();
+  await w.app.pollLive(); await w.app.pollLive();
+  w.go('#A');
+  check(bad, w.screen().includes('| theirs'), 'disk has ' + JSON.stringify(textOf(tree['A.md'])) + ' but after two polls the screen shows: ' + w.screen());
+  return bad;
+});
+
 (async function () {
   let bad = 0;
   for (const [name, fn] of tests) {
