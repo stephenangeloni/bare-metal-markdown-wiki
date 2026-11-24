@@ -676,7 +676,7 @@
   // ---------- init ----------
   async function init() {
     el('refresh').addEventListener('click', refreshLive);
-    window.addEventListener('focus', pollLive); // re-read live folder when the tab regains focus, if anything in it changed
+    window.addEventListener('focus', function () { if (!loading) refreshLive(); }); // re-read live folder when the tab regains focus
     setInterval(pollLive, 5000);
     el('search').addEventListener('input', function (e) { doSearch(e.target.value); });
     const themeBtn = el('themeBtn');
