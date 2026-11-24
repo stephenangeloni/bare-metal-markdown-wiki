@@ -60,7 +60,6 @@
   const foldersOpen = WIKI.foldersOpen === true; // start with the sidebar folders expanded
   const landingPage = typeof WIKI.landingPage === 'string' ? WIKI.landingPage : ''; // page opened at empty hash; '' = generated home
   const sidebarOrder = (WIKI.sidebarOrder === 'folders' || WIKI.sidebarOrder === 'alpha') ? WIKI.sidebarOrder : 'files'; // 'folders' | 'files' | 'alpha'
-  const maxResults = intSetting(WIKI.maxResults, 1, Infinity, 200);
   document.documentElement.style.setProperty('--page-w', intSetting(WIKI.pageWidth, 10, 100, 70) + '%'); // article width cap, 10–100%
   document.documentElement.style.setProperty('--search-w', intSetting(WIKI.searchWidth, 10, 100, 50) + '%'); // search panel width, 10–100% of the window
   document.documentElement.style.setProperty('--search-h', intSetting(WIKI.searchHeight, 10, 100, 60) + 'vh'); // search panel max height, 10–100% of the window
@@ -468,7 +467,7 @@
     q = q.trim().toLowerCase(); const box = el('searchResults');
     el('clearSearch').classList.toggle('show', q.length > 0); // own ✕ button — Firefox has no native one
     if (!q) { box.classList.add('hidden'); return; }
-    const max = maxResults;
+    const max = intSetting(WIKI.maxResults, 1, Infinity, 200);
     const all = Object.keys(PAGES).filter(function (s) { return PAGES[s].haystack.indexOf(q) !== -1; });
     const hits = all.slice(0, max);
     box.innerHTML = hits.length ? hits.map(function (s) {
