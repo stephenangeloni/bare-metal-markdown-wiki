@@ -108,12 +108,12 @@ for (const [from, want] of themeCases) {
 const sidebarFactory = (0, eval)('(function (env) {\n' +
   'let PAGES = env.pages, FILES = env.files, mode = env.mode, showAllText = env.showAllText, sidebarSort = env.sort, activeTag = "", treeOpen = null, shownPage = env.shown || "", landingPage = "", foldersOpen = false, sidebarOrder = "files";\n' +
   'const out = {}; function el() { return out; } function markActive() {}\n' +
-  [grab('escapeHtml'), grab('titleOf'), grab('taggedSlugs'), grab('sidebarOrders'), grab('renderSidebar')].join('\n') +
+  [grab('escapeHtml'), grab('titleOf'), grab('taggedSlugs'), grab('sidebarOrderSpecs'), grab('offeredOrders'), grab('shownOrder'), grab('renderSidebar')].join('\n') +
   '\nrenderSidebar(); return out.innerHTML; })');
 function sidebarFor(sort, opts) {
   opts = opts || {};
   const page = function (slug, title) { return { slug: slug, title: title, folder: slug.indexOf('/') < 0 ? '' : slug.slice(0, slug.lastIndexOf('/')), tags: [] }; };
-  const file = function (path, ext) { const cut = path.lastIndexOf('/'); return { key: path, folder: cut < 0 ? '' : path.slice(0, cut), name: path.slice(cut + 1), title: path.slice(cut + 1), ext: ext }; };
+  const file = function (path, ext) { const cut = path.lastIndexOf('/'); return { key: '/' + path, path: path, folder: cut < 0 ? '' : path.slice(0, cut), name: path.slice(cut + 1), title: path.slice(cut + 1), ext: ext }; };
   const pages = { Home: page('Home', 'Welcome'), 'Guides/Basics': page('Guides/Basics', 'Basics guide'), 'Guides/Advanced': page('Guides/Advanced', 'Zeta') };
   const files = opts.textOff ? {} : { 'Guides/data.csv': file('Guides/data.csv', 'csv'), 'Guides/notes.txt': file('Guides/notes.txt', 'txt'), 'top.js': file('top.js', 'js') };
   const html = sidebarFactory({ pages: pages, files: files, mode: opts.mode || 'live', showAllText: !opts.textOff, sort: sort });
@@ -146,16 +146,16 @@ function fakeDir(node) {
 }
 async function searchIn(folder, q) {
   const disk = { 'top.txt': 'needle at the top', Guides: { 'notes.txt': 'a needle here', 'big.log': 'needle ' + 'x'.repeat(1000001) }, Other: { 'far.txt': 'needle far away' } };
-  const file = function (path) { const cut = path.lastIndexOf('/'); return { key: path, folder: cut < 0 ? '' : path.slice(0, cut), name: path.slice(cut + 1) }; };
+  const file = function (path) { const cut = path.lastIndexOf('/'); return { key: '/' + path, path: path, folder: cut < 0 ? '' : path.slice(0, cut), name: path.slice(cut + 1) }; };
   const pages = { 'Other/Deep': { slug: 'Other/Deep', title: 'Deep', folder: 'Other', haystack: 'deep needle', plain: 'deep needle' } };
-  const files = { 'top.txt': file('top.txt'), 'Guides/notes.txt': file('Guides/notes.txt'), 'Guides/big.log': file('Guides/big.log'), 'Other/far.txt': file('Other/far.txt') };
+  const files = {}; ['top.txt', 'Guides/notes.txt', 'Guides/big.log', 'Other/far.txt'].forEach(function (p) { files['/' + p] = file(p); });
   const html = await searchFactory({ pages: pages, files: files, root: fakeDir(disk) })(folder, q);
   return (html.match(/href="#[^"]+"/g) || []).map(function (h) { return decodeURIComponent(h.slice(7, -1)); }).sort().join(', ');
 }
 const searchCases = [ // .md pages match from anywhere, other text files only from the folder on screen
-  ['Guides folder', 'Guides', 'Guides/notes.txt, Other/Deep'],
-  ['root folder', '', 'Other/Deep, top.txt'],
-  ['Other folder', 'Other', 'Other/Deep, Other/far.txt'],
+  ['Guides folder', 'Guides', '/Guides/notes.txt, Other/Deep'],
+  ['root folder', '', '/top.txt, Other/Deep'],
+  ['Other folder', 'Other', '/Other/far.txt, Other/Deep'],
 ];
 for (const [name, folder, want] of searchCases) {
   const got = await searchIn(folder, 'needle');

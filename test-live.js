@@ -4,7 +4,7 @@
 const grab = require('./test-grab.js');
 const GRABBED = ['titleOf', 'parseFrontmatter', 'buildIndex', 'renderLanding', 'route', 'loadLive', 'folderStamp', 'fileAt', 'versionOf', 'readForEdit', 'saveFile',
   'applyLive', 'showPage', 'walkDir', 'showFolder', 'chooseFolder', 'refreshLive', 'pollLive', 'editMsg', 'draftReadOnly', 'lockEditor', 'makeEditor', 'draftText', 'openEditor', 'saveEditor', 'cancelEditor', 'leaveLive',
-  'splitLines', 'matchLines', 'merge3', 'changedLines', 'checkEditedPage', 'mergeIncoming', 'showChanges', 'reconcile', 'putMerged', 'showConflicts', 'pickConflict', 'isTextSample', 'listsAsText', 'watched', 'renderTextFile', 'heavyTextBytes'].map(grab).join('\n');
+  'splitLines', 'matchLines', 'merge3', 'changedLines', 'checkEditedPage', 'mergeIncoming', 'showChanges', 'reconcile', 'putMerged', 'showConflicts', 'pickConflict', 'isTextSample', 'chromeSaveTempFile', 'listsAsText', 'watched', 'renderTextFile', 'heavyTextBytes'].map(grab).join('\n');
 
 const factory = (0, eval)(`(function (env) {
   const el = env.el, location = env.location, document = env.document, window = env.window || {};
@@ -1113,7 +1113,7 @@ t('a save of A/Home that lands after a switch to B does not put A\'s text into B
 
 function sidebarHtml(shown, hash, treeOpen) {
   const tree = { innerHTML: '' };
-  const fn = grab('taggedSlugs') + grab('sidebarOrders') + grab('renderSidebar');
+  const fn = grab('taggedSlugs') + grab('sidebarOrderSpecs') + grab('offeredOrders') + grab('shownOrder') + grab('renderSidebar');
   const f = (0, eval)('(function (tree, location, shownPage) { const PAGES = { "guides/setup": { folder: "guides", tags: [], title: "Setup" }, Home: { folder: "", tags: [], title: "Home" } }; const activeTag = "", landingPage = "", foldersOpen = false, sidebarOrder = "files", FILES = {}, mode = "bundled", showAllText = false, sidebarSort = "title"; let treeOpen = arguments[3]; function el() { return tree; } function escapeHtml(s) { return s; } function titleOf(s) { return PAGES[s].title; } function markActive() {} ' + fn + ' renderSidebar(); })');
   f(tree, { hash: hash }, shown, treeOpen || null);
   return tree.innerHTML;
@@ -1171,10 +1171,10 @@ t('the only page is saved, then someone removes it: the next polls stop showing 
 
 t('with all text files on, a text file in the folder opens as its text', async function () {
   const tree = { 'Home.md': page('home'), 'notes.txt': page('hello <b>'), sub: { 'a.json': page('{"k":1}') } }; const f = fakeFolder('A', tree);
-  const w = makeApp({ hash: '#notes.txt', showAllText: true }); await w.app.start(f.root); await settle();
+  const w = makeApp({ hash: '#/notes.txt', showAllText: true }); await w.app.start(f.root); await settle();
   const bad = [];
   check(bad, w.screen().includes('hello &lt;b>'), 'notes.txt screen: ' + w.screen());
-  w.go('#sub/a.json'); await settle();
+  w.go('#/sub/a.json'); await settle();
   check(bad, w.screen().includes('{"k":1}'), 'sub/a.json screen: ' + w.screen());
   w.go('#Home'); await settle();
   check(bad, w.screen().includes('PAGE Home'), 'Home.md no longer renders as a page: ' + w.screen());
@@ -1183,27 +1183,37 @@ t('with all text files on, a text file in the folder opens as its text', async f
 
 t('binary files and files under dot folders are not opened as text', async function () {
   const tree = { 'Home.md': page('home'), 'pic.bin': page(Buffer.from([0x89, 0x50, 0x00, 0x01])), 'bad.dat': page(Buffer.from([0xff, 0xfe, 0x41])), '.git': { config: page('[core]') }, '.env': page('SECRET=1') }; const f = fakeFolder('A', tree);
-  const w = makeApp({ hash: '#pic.bin', showAllText: true }); await w.app.start(f.root); await settle();
+  const w = makeApp({ hash: '#/pic.bin', showAllText: true }); await w.app.start(f.root); await settle();
   const bad = [];
-  check(bad, w.screen().startsWith('NOTFOUND pic.bin'), 'pic.bin: ' + w.screen());
-  for (const p of ['bad.dat', '.git/config', '.env']) { w.go('#' + p); await settle(); check(bad, w.screen().startsWith('NOTFOUND ' + p), p + ': ' + w.screen()); }
+  check(bad, w.screen().startsWith('NOTFOUND /pic.bin'), 'pic.bin: ' + w.screen());
+  for (const p of ['bad.dat', '.git/config', '.env']) { w.go('#/' + p); await settle(); check(bad, w.screen().startsWith('NOTFOUND /' + p), p + ': ' + w.screen()); }
   return bad;
 });
 
 t('with all text files off, text files are not opened', async function () {
   const tree = { 'Home.md': page('home'), 'notes.txt': page('hello') }; const f = fakeFolder('A', tree);
-  const w = makeApp({ hash: '#notes.txt' }); await w.app.start(f.root); await settle();
-  return w.screen().startsWith('NOTFOUND notes.txt') ? [] : ['notes.txt opened with the toggle off: ' + w.screen()];
+  const w = makeApp({ hash: '#/notes.txt' }); await w.app.start(f.root); await settle();
+  return w.screen().startsWith('NOTFOUND /notes.txt') ? [] : ['notes.txt opened with the toggle off: ' + w.screen()];
 });
 
 t('turning all text files on, then a poll, finds the text files already there and new ones', async function () {
   const tree = { 'Home.md': page('home'), 'notes.txt': page('hello') }; const f = fakeFolder('A', tree);
-  const w = makeApp({ hash: '#notes.txt' }); await w.app.start(f.root);
+  const w = makeApp({ hash: '#/notes.txt' }); await w.app.start(f.root);
   w.app.setShowAllText(true); await w.app.forceRefresh(); await settle();
   const bad = [];
   check(bad, w.screen().includes('hello'), 'after turning it on: ' + w.screen());
-  tree['new.txt'] = page('fresh'); await w.app.pollLive(); w.go('#new.txt'); await settle();
+  tree['new.txt'] = page('fresh'); await w.app.pollLive(); w.go('#/new.txt'); await settle();
   check(bad, w.screen().includes('fresh'), 'a new text file was missed by the poll: ' + w.screen());
+  return bad;
+});
+
+t('a text file with no extension and a page of the same name both open', async function () {
+  const tree = { 'foo.md': page('the page'), foo: page('the text file') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#/foo', showAllText: true }); await w.app.start(f.root); await settle();
+  const bad = [];
+  check(bad, w.screen().includes('the text file'), '#/foo: ' + w.screen());
+  w.go('#foo'); await settle();
+  check(bad, w.screen().includes('PAGE foo') && w.screen().includes('the page'), '#foo: ' + w.screen());
   return bad;
 });
 

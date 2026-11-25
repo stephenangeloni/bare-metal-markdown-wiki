@@ -143,10 +143,10 @@
       (STEM[stemFile.toLowerCase()] = STEM[stemFile.toLowerCase()] || []).push(p.slug);
     });
     for (const slug in PAGES) PAGES[slug].links = outLinks(PAGES[slug]);
-    FILES = {};
+    FILES = {}; folderTexts = { folder: null, items: [] };
     TEXTRAW.forEach(function (t) {
       const cut = t.path.lastIndexOf('/'), name = t.path.slice(cut + 1), dot = name.lastIndexOf('.');
-      FILES[t.path] = { key: t.path, folder: cut < 0 ? '' : t.path.slice(0, cut), name: name, title: name, ext: dot > 0 ? name.slice(dot + 1).toLowerCase() : '', mtime: t.mtime };
+      FILES['/' + t.path] = { key: '/' + t.path, path: t.path, folder: cut < 0 ? '' : t.path.slice(0, cut), name: name, title: name, ext: dot > 0 ? name.slice(dot + 1).toLowerCase() : '', mtime: t.mtime };
     });
   }
   const WIKI_LINK_RE = /\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]/g;
@@ -365,19 +365,18 @@
     renderBacklinks(slug);
   }
 
-  async function renderTextFile(path) {
-    const page = el('page'), h = liveHandle;
+  async function renderTextFile(key) {
+    const page = el('page'), h = liveHandle, file = FILES[key];
     tocHtml = ''; el('backlinks').innerHTML = ''; placeToc();
-    page.innerHTML = crumbHtml(path);
-    let text;
-    try { text = await (await (await fileAt(h, path)).getFile()).text(); }
+    page.innerHTML = crumbHtml(file.path);
+    let f = null, text = null;
+    try { f = await (await fileAt(h, file.path)).getFile(); text = await f.text(); }
     catch (e) { text = null; }
-    if (shownPage !== path || liveHandle !== h || editing) return;
-    if (text === null) { page.innerHTML = crumbHtml(path) + '<p>Could not read <code>' + escapeHtml(path) + '</code>.</p>'; return; }
-    const ext = FILES[path] ? FILES[path].ext : '';
-    const lang = window.hljs && hljs.getLanguage(ext) ? ext : 'plaintext';
-    page.innerHTML = crumbHtml(path) + '<pre class="text-file"><code class="language-' + escapeHtml(lang) + '">' + escapeHtml(text) + '</code></pre>';
-    if (text.length <= heavyTextBytes) highlightCode(page);
+    if (shownPage !== key || liveHandle !== h || editing) return;
+    if (text === null) { page.innerHTML = crumbHtml(file.path) + '<p>Could not read <code>' + escapeHtml(file.path) + '</code>.</p>'; return; }
+    const lang = window.hljs && hljs.getLanguage(file.ext) ? file.ext : 'plaintext';
+    page.innerHTML = crumbHtml(file.path) + '<pre class="text-file"><code class="language-' + escapeHtml(lang) + '">' + escapeHtml(text) + '</code></pre>';
+    if (f.size <= heavyTextBytes) highlightCode(page);
     addCopyButtons(page);
   }
 
@@ -411,19 +410,28 @@
   }
 
   // ---------- sidebar / tags ----------
-  function sidebarOrders() { return mode === 'live' && showAllText ? ['title', 'name', 'type', 'type-grouped'] : ['title', 'name']; }
+  function sidebarOrderSpecs() {
+    const inFolders = function (e) { return e.folder ? e.folder.split('/') : []; };
+    const name = function (e) { return e.name; };
+    const path = function (e) { return (e.folder ? e.folder + '/' : '') + e.name; };
+    const byName = function (a, b) { return a.name.localeCompare(b.name); };
+    return {
+      title: { menu: 'By title', needsTextFiles: false, label: function (e) { return e.title; }, groupOf: inFolders, compare: function (a, b) { return a.title.localeCompare(b.title); } },
+      name: { menu: 'By file name', needsTextFiles: false, label: name, groupOf: inFolders, compare: byName },
+      type: { menu: 'By type, in folders', needsTextFiles: true, label: name, groupOf: inFolders, compare: function (a, b) { return a.ext.localeCompare(b.ext) || byName(a, b); } },
+      'type-grouped': { menu: 'Grouped by type', needsTextFiles: true, label: path, groupOf: function (e) { return ['.' + (e.ext || '?')]; }, compare: function (a, b) { return path(a).localeCompare(path(b)); } }
+    };
+  }
+  function offeredOrders() {
+    const specs = sidebarOrderSpecs(), textFilesListed = mode === 'live' && showAllText;
+    return Object.keys(specs).filter(function (o) { return textFilesListed || !specs[o].needsTextFiles; });
+  }
+  function shownOrder() { return offeredOrders().indexOf(sidebarSort) !== -1 ? sidebarSort : 'title'; }
   function renderSidebar() {
     const tree = el('tree');
-    const order = sidebarOrders().indexOf(sidebarSort) !== -1 ? sidebarSort : 'title';
+    const spec = sidebarOrderSpecs()[shownOrder()], groupOf = spec.groupOf, label = spec.label;
     const entries = taggedSlugs().map(function (s) { return { key: s, folder: PAGES[s].folder, name: s.split('/').pop() + '.md', title: PAGES[s].title, ext: 'md' }; })
       .concat(activeTag ? [] : Object.keys(FILES).map(function (p) { return FILES[p]; }));
-    const groupOf = order === 'type-grouped'
-      ? function (e) { return ['.' + (e.ext || '?')]; }
-      : function (e) { return e.folder ? e.folder.split('/') : []; };
-    const label = { title: function (e) { return e.title; }, name: function (e) { return e.name; }, type: function (e) { return e.name; }, 'type-grouped': function (e) { return (e.folder ? e.folder + '/' : '') + e.name; } }[order];
-    const compare = order === 'type'
-      ? function (a, b) { return a.ext.localeCompare(b.ext) || a.name.localeCompare(b.name); }
-      : function (a, b) { return label(a).localeCompare(label(b)); };
     const root = { entries: [], subs: {} }; // nested tree: folder -> its entries + subfolders
     entries.forEach(function (e) {
       let node = root;
@@ -444,7 +452,7 @@
     };
     const orderedItems = function (node, path) { // [display name, html] pairs, per sidebarOrder
       const folderItems = Object.keys(node.subs).sort().map(function (sub) { return [sub, renderNode(sub, node.subs[sub], path)]; });
-      let list = node.entries.slice().sort(compare).map(function (e) { return [label(e), linkHtml(e)]; });
+      let list = node.entries.slice().sort(spec.compare).map(function (e) { return [label(e), linkHtml(e)]; });
       if (sidebarOrder === 'folders') list = folderItems.concat(list);
       else if (sidebarOrder === 'alpha') { list = list.concat(folderItems); list.sort(function (a, b) { return a[0].localeCompare(b[0]); }); }
       else list = list.concat(folderItems); // 'files': files first, then folders
@@ -509,7 +517,7 @@
     for (const p of Object.keys(FILES)) {
       if (FILES[p].folder !== folder) continue;
       let text;
-      try { const f = await (await fileAt(h, p)).getFile(); if (f.size > heavyTextBytes) continue; text = await f.text(); }
+      try { const f = await (await fileAt(h, FILES[p].path)).getFile(); if (f.size > heavyTextBytes) continue; text = await f.text(); }
       catch (e) { continue; }
       if (folderTexts !== mine || liveHandle !== h) return;
       mine.items.push({ key: p, crumb: (folder ? folder + ' / ' : '') + FILES[p].name, haystack: (FILES[p].name + ' ' + text).toLowerCase(), plain: text.replace(/\s+/g, ' ') });
@@ -521,7 +529,7 @@
     if (!q) { box.classList.add('hidden'); return; }
     const max = intSetting(WIKI.maxResults, 1, Infinity, 200);
     const all = Object.keys(PAGES).map(function (s) { return { key: s, crumb: (PAGES[s].folder ? PAGES[s].folder + ' / ' : '') + PAGES[s].title, haystack: PAGES[s].haystack, plain: PAGES[s].plain }; })
-      .concat(folderTexts.items.filter(function (t) { return FILES[t.key]; }))
+      .concat(folderTexts.items)
       .filter(function (h) { return h.haystack.indexOf(q) !== -1; });
     const hits = all.slice(0, max);
     box.innerHTML = hits.length ? hits.map(function (h) {
@@ -544,10 +552,9 @@
     fillSortBy();
   }
   function fillSortBy() {
-    const names = { title: 'By title', name: 'By file name', type: 'By type, in folders', 'type-grouped': 'Grouped by type' };
-    const orders = sidebarOrders();
-    el('sortBy').innerHTML = orders.map(function (o) { return '<option value="' + o + '">' + names[o] + '</option>'; }).join('');
-    el('sortBy').value = orders.indexOf(sidebarSort) !== -1 ? sidebarSort : 'title';
+    const specs = sidebarOrderSpecs();
+    el('sortBy').innerHTML = offeredOrders().map(function (o) { return '<option value="' + o + '">' + specs[o].menu + '</option>'; }).join('');
+    el('sortBy').value = shownOrder();
   }
   function closeModeMenu() { el('modeMenu').classList.add('hidden'); el('mode').setAttribute('aria-expanded', 'false'); }
 
@@ -573,9 +580,10 @@
     shownPage = slug; editing = null;
     el('page').classList.remove('home');
     if (!slug) { document.title = renderLanding() + ' — ' + wikiName; }
-    else if (!PAGES[slug] && FILES[slug]) { renderTextFile(slug); document.title = FILES[slug].name + ' — ' + wikiName; }
+    else if (FILES[slug]) { renderTextFile(slug); document.title = FILES[slug].name + ' — ' + wikiName; }
     else { renderPage(slug); document.title = titleOf(slug) + ' — ' + wikiName; }
-    loadFolderTexts(PAGES[slug] ? PAGES[slug].folder : FILES[slug] ? FILES[slug].folder : '');
+    const onScreen = slug || (landingPage && PAGES[landingPage] ? landingPage : '');
+    loadFolderTexts(PAGES[onScreen] ? PAGES[onScreen].folder : FILES[onScreen] ? FILES[onScreen].folder : '');
     renderSidebar(); // re-renders with the active page's folder chain open; ends with markActive()
   }
 
@@ -678,7 +686,8 @@
     return new RegExp('\\.(' + (ok.length ? ok.join('|') : 'png|jpg|jpeg|gif|svg|webp') + ')$', 'i');
   }
   const imgExtRe = extRe(WIKI.imageExts); // bundled mode has no filter at all — the browser paints any format it supports
-  function listsAsText(path) { return showAllText && !/\.(md|crswap)$/i.test(path) && !/(^|\/)\./.test(path); }
+  const chromeSaveTempFile = /\.crswap$/i;
+  function listsAsText(path) { return showAllText && !/\.md$/i.test(path) && !chromeSaveTempFile.test(path) && !/(^|\/)\./.test(path); }
   function watched(path) { return /\.md$/i.test(path) || imgExtRe.test(path) || listsAsText(path); }
   function isTextSample(bytes) {
     if (bytes.indexOf(0) !== -1) return false;
@@ -1040,7 +1049,7 @@
       window.addEventListener('pointerup', up);
     });
 
-    try { sidebarSort = localStorage.getItem('sidebar-sort') || 'title'; showAllText = localStorage.getItem('all-text') === '1'; } catch (e) {}
+    try { const saved = localStorage.getItem('sidebar-sort'); if (Object.keys(sidebarOrderSpecs()).indexOf(saved) !== -1) sidebarSort = saved; showAllText = localStorage.getItem('all-text') === '1'; } catch (e) {}
     el('allText').checked = showAllText;
     try {
       const h = await IDB.get(dirKey);
@@ -1052,7 +1061,8 @@
       if (open) el('modeMenu').querySelector('.mode-item:not(.hidden)').focus();
     });
     document.addEventListener('click', function (e) { if (!e.target.closest('.mode-wrap')) closeModeMenu(); });
-    el('modeMenu').addEventListener('keydown', function (e) { if (e.key === 'Escape') { closeModeMenu(); el('mode').focus(); } });
+    el('modeMenu').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.stopPropagation(); closeModeMenu(); el('mode').focus(); } });
+    document.querySelector('.mode-wrap').addEventListener('focusout', function (e) { if (!e.currentTarget.contains(e.relatedTarget)) closeModeMenu(); });
     el('choose').addEventListener('click', function () { closeModeMenu(); chooseFolder(); });
     el('leave').addEventListener('click', function () { closeModeMenu(); leaveLive(); });
     el('sortBy').addEventListener('change', function (e) {
@@ -1063,7 +1073,7 @@
     el('allText').addEventListener('change', function (e) {
       showAllText = e.target.checked;
       try { localStorage.setItem('all-text', showAllText ? '1' : ''); } catch (err) {}
-      fillSortBy(); lastRefresh = 0; refreshLive();
+      fillSortBy(); renderSidebar(); lastRefresh = 0; refreshLive();
     });
     el('tree').addEventListener('toggle', function (e) { // capture phase: the toggle event does not bubble. remembers hand-opened folders across redraws
       const p = e.target.getAttribute('data-path');
