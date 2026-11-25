@@ -3,7 +3,7 @@
 
 const grab = require('./test-grab.js');
 const GRABBED = ['titleOf', 'parseFrontmatter', 'buildIndex', 'renderLanding', 'route', 'loadLive', 'folderStamp', 'fileAt', 'versionOf', 'readForEdit', 'saveFile',
-  'applyLive', 'showPage', 'walkDir', 'showFolder', 'chooseFolder', 'refreshLive', 'pollLive', 'editMsg', 'draftReadOnly', 'lockEditor', 'makeEditor', 'draftText', 'openEditor', 'saveEditor', 'cancelEditor', 'leaveLive',
+  'applyLive', 'showPage', 'walkDir', 'scanBadge', 'showFolder', 'chooseFolder', 'refreshLive', 'pollLive', 'editMsg', 'draftReadOnly', 'lockEditor', 'makeEditor', 'draftText', 'openEditor', 'saveEditor', 'cancelEditor', 'leaveLive',
   'splitLines', 'matchLines', 'merge3', 'changedLines', 'checkEditedPage', 'mergeIncoming', 'showChanges', 'reconcile', 'putMerged', 'showConflicts', 'pickConflict', 'isTextSample', 'chromeSaveTempFile', 'listsAsText', 'watched', 'renderTextFile', 'heavyTextBytes', 'loadFolderTexts', 'stampHeader', 'watchedFile', 'looksLikeText'].map(grab).join('\n');
 
 const factory = (0, eval)(`(function (env) {
@@ -17,7 +17,7 @@ const factory = (0, eval)(`(function (env) {
   let FILES = {}, TEXTRAW = [], showAllText = !!env.showAllText, folderTexts = { folder: null, items: [] }, textRender = null;
   function highlightCode() {} function addCopyButtons() {}
   function closeNav() {} function renderSidebar() {} function renderTags() {} function placeToc() {} function markActive() {}
-  function setMode(m) { env.label = m === 'live' ? liveHandle.name : 'bundled'; }
+  function setMode(m) { env.label = m === 'live' ? liveHandle.name : 'bundled'; el('mode').textContent = m === 'live' ? 'live · ' + liveHandle.name : 'bundled'; }
   function crumbHtml(slug) { return '<nav>' + slug + '</nav>'; }
   function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function outLinks() { return new Set(); }
@@ -34,7 +34,7 @@ const factory = (0, eval)(`(function (env) {
     route: route, refreshLive: refreshLive, pollLive: pollLive, openEditor: openEditor, saveEditor: saveEditor, cancelEditor: cancelEditor, chooseFolder: chooseFolder, leaveLive: leaveLive,
     mergeIncoming: mergeIncoming, showChanges: showChanges, pickConflict: pickConflict,
     async start(h) { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; buildIndex(); setMode('live'); route(); },
-    forceRefresh() { lastRefresh = 0; return refreshLive(); },
+    forceRefresh(showProgress) { lastRefresh = 0; return refreshLive(showProgress); },
     setShowAllText(on) { showAllText = on; },
     get files() { return Object.keys(FILES); }, get folderTexts() { return folderTexts; }, get mode() { return mode; },
     get editing() { return editing; }, get pages() { return PAGES; }, get handle() { return liveHandle && liveHandle.name; }
@@ -1451,6 +1451,84 @@ t('a page and a folder named after built-in object properties open, and other su
   w.go('#constructor%2Fnotes'); await settle();
   check(bad, w.screen().startsWith('PAGE constructor/notes |'), 'constructor/notes.md: ' + w.screen());
   for (const name of ['toString', 'hasOwnProperty', '__proto__', '/constructor']) { w.go('#' + encodeURIComponent(name)); await settle(); check(bad, w.screen().startsWith('NOTFOUND ' + name), name + ': ' + w.screen()); }
+  return bad;
+});
+
+function scanTree() { return { 'a.md': page('a'), 'b.md': page('b'), Sub: { 'c.md': page('c') } }; }
+t('opening a folder shows how many files it has read and which folder it is in, then the folder name', async function () {
+  const f = fakeFolder('A', scanTree());
+  const w = makeApp(); w.env.pick = async function () { return f.root; };
+  f.ctl.hold.add('Sub/c.md');
+  const opening = w.app.chooseFolder(); await settle();
+  const bad = [];
+  const badge = function () { return w.env.el('mode').textContent; };
+  check(bad, badge() === 'scanning\u2026 2 files \u00b7 Sub', 'badge mid-scan: ' + JSON.stringify(badge()));
+  f.releaseAll(); await opening;
+  check(bad, badge() === 'live · A', 'badge after the scan: ' + JSON.stringify(badge()));
+  return bad;
+});
+
+t('the refresh button shows the scan count while it re-reads the folder', async function () {
+  const f = fakeFolder('A', scanTree());
+  const w = makeApp(); await w.app.start(f.root);
+  f.ctl.hold.add('Sub/c.md');
+  const refreshing = w.app.refreshLive(true); await settle();
+  const bad = [];
+  const badge = function () { return w.env.el('mode').textContent; };
+  check(bad, badge() === 'scanning\u2026 2 files \u00b7 Sub', 'badge mid-refresh: ' + JSON.stringify(badge()));
+  f.releaseAll(); await refreshing;
+  check(bad, badge() === 'live · A', 'badge after the refresh: ' + JSON.stringify(badge()));
+  return bad;
+});
+
+t('background re-reads (the 5-second poll and the focus refresh) leave the badge alone', async function () {
+  const tree = scanTree(); const f = fakeFolder('A', tree);
+  const w = makeApp(); await w.app.start(f.root);
+  const bad = [];
+  const badge = function () { return w.env.el('mode').textContent; };
+  tree.Sub['c.md'] = page('c v2');
+  f.ctl.hold.add('Sub/c.md');
+  const polling = w.app.pollLive(); await settle();
+  check(bad, badge() === 'live · A', 'badge during a poll: ' + JSON.stringify(badge()));
+  f.releaseAll(); await polling;
+  f.ctl.hold.add('Sub/c.md');
+  const focusing = w.app.forceRefresh(); await settle();
+  check(bad, badge() === 'live · A', 'badge during a focus refresh: ' + JSON.stringify(badge()));
+  f.releaseAll(); await focusing;
+  return bad;
+});
+
+t('a scan that fails on a read puts the badge back instead of leaving it on scanning', async function () {
+  const f = fakeFolder('A', scanTree());
+  const w = makeApp(); w.env.pick = async function () { return f.root; };
+  const bad = [];
+  const badge = function () { return w.env.el('mode').textContent; };
+  f.ctl.failOnce.add('Sub/c.md');
+  await w.app.chooseFolder();
+  check(bad, badge() === 'bundled', 'badge after a failed open: ' + JSON.stringify(badge()));
+  await w.app.chooseFolder();
+  f.ctl.failOnce.add('Sub/c.md');
+  const refreshed = await w.app.forceRefresh(true);
+  check(bad, refreshed === false, 'the refresh did not fail: ' + refreshed);
+  check(bad, badge() === 'live · A', 'badge after a failed refresh: ' + JSON.stringify(badge()));
+  return bad;
+});
+
+t('picking another folder mid-scan: the first scan stops writing to the badge', async function () {
+  const a = fakeFolder('A', scanTree()); const b = fakeFolder('B', { 'Home.md': page('b') });
+  const w = makeApp();
+  const badge = function () { return w.env.el('mode').textContent; };
+  a.ctl.hold.add('a.md'); a.ctl.hold.add('Sub/c.md');
+  w.env.pick = async function () { return a.root; };
+  const first = w.app.chooseFolder(); await settle();
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder();
+  const bad = [];
+  check(bad, badge() === 'live · B', 'badge after B opened: ' + JSON.stringify(badge()));
+  a.releaseOne('a.md'); await settle();
+  check(bad, badge() === 'live · B', 'badge while A is still walking: ' + JSON.stringify(badge()));
+  a.releaseAll(); await first;
+  check(bad, badge() === 'live · B', 'badge after A gave up: ' + JSON.stringify(badge()));
   return bad;
 });
 
