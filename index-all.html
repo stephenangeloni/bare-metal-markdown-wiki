@@ -5500,10 +5500,11 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
       if (scan) scan.read(folder);
     }
   }
-  function scanBadge(rootName) {
+  function scanBadge(rootName, isCurrent) {
     let files = 0, shownAt = 0;
     el('scanNote').textContent = 'Scanning ' + rootName + '\u2026';
     function show(folder) {
+      if (!isCurrent()) return;
       shownAt = Date.now();
       el('mode').textContent = 'scanning\u2026 ' + files + (files === 1 ? ' file' : ' files') + ' \u00b7 ' + (folder || rootName);
     }
@@ -5538,11 +5539,11 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     async set(k, v) { const d = await this.open(); const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); },
     async del(k) { const d = await this.open(); const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); }
   };
-  async function showFolder(h, visible) {
-    const mine = loading = { h: h };
+  async function showFolder(h, showProgress) {
+    const mine = loading = { h: h, showProgress: showProgress };
     try {
       if ((await h.queryPermission({ mode: 'read' })) !== 'granted') return false;
-      const live = await loadLive(h, visible ? scanBadge(h.name) : null);
+      const live = await loadLive(h, showProgress ? scanBadge(h.name, function () { return loading === mine; }) : null);
       if (loading !== mine || editing) return false;
       if (h === liveHandle && live.stamp === liveStamp) return true; // nothing changed: no redraw, so a folder you are browsing survives focus refreshes and live polls
       const sameFolder = h === liveHandle, scroll = sameFolder ? el('content').scrollTop : 0;
@@ -5552,7 +5553,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
       return true;
     } catch (e) { return false; } finally {
       if (loading === mine) loading = null;
-      if (visible) setMode(mode);
+      if (showProgress && !(loading && loading.showProgress)) setMode(mode);
     }
   }
   async function chooseFolder() {
@@ -5572,10 +5573,10 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     buildIndex(); renderTags(); renderSidebar(); setMode('bundled');
     route(); // the live page on screen may not exist in the snapshot
   }
-  function refreshLive(visible) {
+  function refreshLive(showProgress) {
     if (mode !== 'live' || editing || (loading && loading.h !== liveHandle)) return false;
     const now = Date.now(); if (now - lastRefresh < 1500) return false; lastRefresh = now;
-    return showFolder(liveHandle, visible);
+    return showFolder(liveHandle, showProgress);
   }
   async function pollLive() {
     if (editing) { await checkEditedPage(); return; }
@@ -5863,7 +5864,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     el('allText').checked = showAllText;
     try {
       const h = await IDB.get(dirKey);
-      if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { applyLive(await loadLive(h, scanBadge(h.name))); liveHandle = h; mode = 'live'; } }
+      if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { applyLive(await loadLive(h, scanBadge(h.name, function () { return true; }))); liveHandle = h; mode = 'live'; } }
     } catch (e) {}
     el('mode').addEventListener('click', function () {
       const open = el('modeMenu').classList.toggle('hidden') === false;

@@ -34,7 +34,7 @@ const factory = (0, eval)(`(function (env) {
     route: route, refreshLive: refreshLive, pollLive: pollLive, openEditor: openEditor, saveEditor: saveEditor, cancelEditor: cancelEditor, chooseFolder: chooseFolder, leaveLive: leaveLive,
     mergeIncoming: mergeIncoming, showChanges: showChanges, pickConflict: pickConflict,
     async start(h) { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; buildIndex(); setMode('live'); route(); },
-    forceRefresh() { lastRefresh = 0; return refreshLive(); },
+    forceRefresh(showProgress) { lastRefresh = 0; return refreshLive(showProgress); },
     setShowAllText(on) { showAllText = on; },
     get files() { return Object.keys(FILES); }, get folderTexts() { return folderTexts; }, get mode() { return mode; },
     get editing() { return editing; }, get pages() { return PAGES; }, get handle() { return liveHandle && liveHandle.name; }
@@ -1508,8 +1508,27 @@ t('a scan that fails on a read puts the badge back instead of leaving it on scan
   check(bad, badge() === 'bundled', 'badge after a failed open: ' + JSON.stringify(badge()));
   await w.app.chooseFolder();
   f.ctl.failOnce.add('Sub/c.md');
-  await w.app.forceRefresh(); await w.app.refreshLive(true);
+  const refreshed = await w.app.forceRefresh(true);
+  check(bad, refreshed === false, 'the refresh did not fail: ' + refreshed);
   check(bad, badge() === 'live · A', 'badge after a failed refresh: ' + JSON.stringify(badge()));
+  return bad;
+});
+
+t('picking another folder mid-scan: the first scan stops writing to the badge', async function () {
+  const a = fakeFolder('A', scanTree()); const b = fakeFolder('B', { 'Home.md': page('b') });
+  const w = makeApp();
+  const badge = function () { return w.env.el('mode').textContent; };
+  a.ctl.hold.add('a.md'); a.ctl.hold.add('Sub/c.md');
+  w.env.pick = async function () { return a.root; };
+  const first = w.app.chooseFolder(); await settle();
+  w.env.pick = async function () { return b.root; };
+  await w.app.chooseFolder();
+  const bad = [];
+  check(bad, badge() === 'live · B', 'badge after B opened: ' + JSON.stringify(badge()));
+  a.releaseOne('a.md'); await settle();
+  check(bad, badge() === 'live · B', 'badge while A is still walking: ' + JSON.stringify(badge()));
+  a.releaseAll(); await first;
+  check(bad, badge() === 'live · B', 'badge after A gave up: ' + JSON.stringify(badge()));
   return bad;
 });
 
