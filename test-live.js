@@ -1412,6 +1412,21 @@ t('opening a text file in a subfolder makes that folder\'s text files, and only 
   return got === '/sub/a.txt, /sub/b.json' ? [] : ['searchable text files: ' + got];
 });
 
+t('switching to another folder that has a file of the same name does not show the old folder\'s text while the new one is read', async function () {
+  const a = fakeFolder('A', { 'Home.md': page('h'), 'notes.txt': page('TEXT FROM A') });
+  const b = fakeFolder('B', { 'Home.md': page('h'), 'notes.txt': page('TEXT FROM B') });
+  const w = makeApp({ hash: '#/notes.txt', showAllText: true }); await w.app.start(a.root); await settle();
+  b.ctl.hold.add('notes.txt');
+  w.env.pick = async function () { return b.root; };
+  const c = w.app.chooseFolder(); await settle();
+  const bad = [];
+  check(bad, w.env.label === 'B', 'setup: badge should say B: ' + w.env.label);
+  check(bad, w.screen().indexOf('TEXT FROM A') === -1, 'badge says ' + w.env.label + ' while the page shows: ' + w.screen());
+  b.releaseAll(); await c; await settle();
+  check(bad, w.screen().indexOf('TEXT FROM B') !== -1, 'after the read: ' + w.screen());
+  return bad;
+});
+
 (async function () {
   let bad = 0;
   for (const [name, fn] of tests) {

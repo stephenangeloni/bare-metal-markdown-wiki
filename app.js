@@ -366,10 +366,10 @@
     renderBacklinks(slug);
   }
 
-  async function renderTextFile(key, alreadyOnScreen) {
+  async function renderTextFile(key, keepShownText) {
     const page = el('page'), h = liveHandle, file = FILES[key], mine = textRender = {};
     tocHtml = ''; el('backlinks').innerHTML = ''; placeToc();
-    if (!alreadyOnScreen) page.innerHTML = crumbHtml(file.path);
+    if (!keepShownText) page.innerHTML = crumbHtml(file.path);
     let f = null, text = null;
     try {
       f = await (await fileAt(h, file.path)).getFile();
@@ -459,9 +459,10 @@
       let list = node.entries.slice().sort(spec.compare).map(function (e) { return [label(e), linkHtml(e)]; });
       if (sidebarOrder === 'folders') list = folderItems.concat(list);
       else if (sidebarOrder === 'alpha') {
+        const folders = folderItems.slice().sort(function (a, b) { return a[0].localeCompare(b[0]); });
         const merged = []; let next = 0;
-        list.forEach(function (item) { while (next < folderItems.length && folderItems[next][0].localeCompare(item[0]) < 0) merged.push(folderItems[next++]); merged.push(item); });
-        list = merged.concat(folderItems.slice(next));
+        list.forEach(function (item) { while (next < folders.length && folders[next][0].localeCompare(item[0]) < 0) merged.push(folders[next++]); merged.push(item); });
+        list = merged.concat(folders.slice(next));
       }
       else list = list.concat(folderItems); // 'files': files first, then folders
       return list;
@@ -584,13 +585,12 @@
     showPage(slug);
     el('content').scrollTop = 0; // hash-only navigation: the browser never resets the article container, so do it here
   }
-  function showPage(slug) {
+  function showPage(slug, sameFolderRedraw) {
     if (editing && editing.cm) editing.cm.toTextArea();
-    const textAlreadyOnScreen = shownPage === slug && !editing;
     shownPage = slug; editing = null;
     el('page').classList.remove('home');
     if (!slug) { document.title = renderLanding() + ' — ' + wikiName; }
-    else if (FILES[slug]) { renderTextFile(slug, textAlreadyOnScreen); document.title = FILES[slug].name + ' — ' + wikiName; }
+    else if (FILES[slug]) { renderTextFile(slug, sameFolderRedraw); document.title = FILES[slug].name + ' — ' + wikiName; }
     else { renderPage(slug); document.title = titleOf(slug) + ' — ' + wikiName; }
     const onScreen = slug || (landingPage && PAGES[landingPage] ? landingPage : '');
     loadFolderTexts(PAGES[onScreen] ? PAGES[onScreen].folder : FILES[onScreen] ? FILES[onScreen].folder : '');
@@ -760,9 +760,9 @@
       const live = await loadLive(h);
       if (loading !== mine || editing) return false;
       if (h === liveHandle && live.stamp === liveStamp) return true; // nothing changed: no redraw, so a folder you are browsing survives focus refreshes and live polls
-      const scroll = h === liveHandle ? el('content').scrollTop : 0;
+      const sameFolder = h === liveHandle, scroll = sameFolder ? el('content').scrollTop : 0;
       liveHandle = h; applyLive(live); mode = 'live';
-      buildIndex(); renderTags(); setMode('live'); showPage(shownPage);
+      buildIndex(); renderTags(); setMode('live'); showPage(shownPage, sameFolder);
       el('content').scrollTop = scroll;
       return true;
     } catch (e) { return false; } finally { if (loading === mine) loading = null; }

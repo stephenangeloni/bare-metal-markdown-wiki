@@ -130,8 +130,16 @@ const sidebarCases = [
   ['by type keeps extension order when folders mix in alphabetically', 'type', { order: 'alpha' }, '[Guides] | data.csv | Advanced.md | Basics.md | notes.txt | top.js | Home.md'],
   ['type falls back to title in bundled mode', 'type-grouped', { textOff: true, mode: 'bundled' }, 'Welcome | [Guides] | Basics guide | Zeta'],
 ];
+const alphaFactory = function (slugs) {
+  const pages = {}; slugs.forEach(function (sl) { const cut = sl.lastIndexOf('/'); pages[sl] = { slug: sl, folder: cut < 0 ? '' : sl.slice(0, cut), title: sl.slice(cut + 1), tags: [] }; });
+  const html = sidebarFactory({ pages: pages, files: {}, mode: 'bundled', showAllText: false, sort: 'title', order: 'alpha' });
+  const items = []; const re = /data-slug="[^"]+">([^<]*)<|<summary>([^<]*)</g; let m;
+  while ((m = re.exec(html))) items.push(m[2] !== undefined ? '[' + m[2] + ']' : m[1]);
+  return items.join(' | ');
+};
+sidebarCases.push(['alpha stays alphabetical when folder names differ in case', null, null, '[archive] | y | beta | yak | [Zeta] | x']);
 for (const [name, sort, opts, want] of sidebarCases) {
-  const got = sidebarFor(sort, opts);
+  const got = sort === null ? alphaFactory(['beta', 'yak', 'Zeta/x', 'archive/y']) : sidebarFor(sort, opts);
   if (got !== want) { bad++; console.log('FAIL: sidebar ' + name + ':\n  got  ' + got + '\n  want ' + want); }
 }
 const searchFactory = (0, eval)('(function (env) {\n' +
