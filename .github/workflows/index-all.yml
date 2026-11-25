@@ -1,0 +1,43 @@
+name: index-all.html
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test
+        run: for t in test-app.js test-render.js test-edit.js test-live.js test-bundle.js; do node "$t"; done
+      - name: Bundle
+        run: node bundle.js
+      - uses: actions/upload-artifact@v4
+        with:
+          name: index-all
+          path: index-all.html
+
+  release:
+    if: github.event_name == 'release'
+    needs: bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: index-all
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" index-all.html --clobber --repo "${{ github.repository }}"

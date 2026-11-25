@@ -209,8 +209,17 @@ Drop the new version on top of the folder (index.html, style.css, app.js,
 build.sh/bat/ps1, vendor/), keep those three, then re-run the build. Style tweaks
 go in `user.css`, which loads after `style.css` — override the `--bg`/`--accent`
 etc. variables or any selector there instead of editing `style.css` (the edit box
-is `.EasyMDEContainer .CodeMirror`, the toolbar `.editor-toolbar`). If you do
-edit `style.css`, re-run the build: the page uses the copy inlined into `index.html`.
+is `.EasyMDEContainer .CodeMirror`, the toolbar `.editor-toolbar`).
+
+## Single-file version
+
+Each GitHub release has an `index-all.html` attached: `index.html` with
+`app.js`, `style.css`, `config.js`, `user.css` and everything in `vendor/`
+(KaTeX fonts included) inlined. It needs only `data.js` next to it, so put it
+beside `articles/` and the build script, run the build, and open it. It carries
+the repository's default `config.js` and `user.css`, so your own copies of those
+two files have no effect on it; use `index.html` if you change them. To make it
+yourself, run `node bundle.js`.
 
 ## Markdown conventions
 
@@ -328,7 +337,7 @@ folder ──File System Access API──────┘
 
 ```
 index.html        the frame (layout + UI chrome, no logic)
-style.css         styling source — the build inlines it, minified, into index.html
+style.css         styling
 user.css          your style tweaks (loaded after style.css) — survives upgrades
 config.js         your settings — survives upgrades
 app.js            all logic: loaders, renderer, search, navigation
@@ -340,6 +349,8 @@ articles/         the knowledge base (sample pages included)
 vendor/           markdown-it, mdit-extras, highlight.js, KaTeX (+fonts), mermaid, EasyMDE
 test-render.js    smoke test: node test-render.js (run after upgrading vendor/)
 test-app.js       smoke test: node test-app.js (link/footnote source passes)
+bundle.js         CI: writes index-all.html (everything inlined except data.js)
+test-bundle.js    smoke test: node test-bundle.js (bundle.js output)
 ```
 
 ## Limitations

@@ -32,27 +32,3 @@ json_str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\
 } > "$OUT"
 
 echo "Wrote $OUT ($(grep -c 'slug:' "$OUT" 2>/dev/null || echo 0) pages)"
-
-START='<!-- style.css -->'
-END='<!-- /style.css -->'
-if ! grep -qF "$END" index.html; then
-  echo "index.html has no $START ... $END markers, so style.css was not inlined." >&2
-  exit 1
-fi
-css="$(LC_ALL=C tr '\n\r\t\f' '    ' < style.css | LC_ALL=C sed -E \
-  -e 's:/\*[^*]*\*+([^/*][^*]*\*+)*/::g' \
-  -e 's/ +/ /g' \
-  -e 's/ ?([{};,>]) ?/\1/g' \
-  -e 's/;}/}/g' \
-  -e 's/^ //' -e 's/ $//')"
-skip=0
-while IFS= read -r line || [ -n "$line" ]; do
-  if [ "$skip" -eq 1 ]; then
-    case $line in *"$END"*) skip=0; printf '%s\n' "$line" ;; esac
-    continue
-  fi
-  printf '%s\n' "$line"
-  case $line in *"$START"*) skip=1; printf '  <style>%s</style>\n' "$css" ;; esac
-done < index.html > index.html.tmp
-mv index.html.tmp index.html
-echo "Inlined style.css into index.html (${#css} chars)"
