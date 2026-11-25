@@ -271,6 +271,7 @@ A bare URL — https://example.com — is auto-linked.
 ```bash
 ./build.sh    # Linux / macOS — pure bash, offline
 build.bat     # Windows — double-click, offline
+./build.ps1   # PowerShell (Windows, or pwsh anywhere) — offline
 ```
 
 ```markdown
