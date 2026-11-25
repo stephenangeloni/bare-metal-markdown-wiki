@@ -106,7 +106,7 @@ for (const [from, want] of themeCases) {
   if (got !== want) { bad++; console.log('FAIL: nextTheme ' + from + ': got ' + got + ', want ' + want); }
 }
 const sidebarFactory = (0, eval)('(function (env) {\n' +
-  'let PAGES = env.pages, FILES = env.files, mode = env.mode, showAllText = env.showAllText, sidebarSort = env.sort, activeTag = "", treeOpen = null, shownPage = env.shown || "", landingPage = "", foldersOpen = false, sidebarOrder = "files";\n' +
+  'let PAGES = env.pages, FILES = env.files, mode = env.mode, showAllText = env.showAllText, sidebarSort = env.sort, activeTag = "", treeOpen = null, shownPage = env.shown || "", landingPage = "", foldersOpen = false, sidebarOrder = env.order;\n' +
   'const out = {}; function el() { return out; } function markActive() {}\n' +
   [grab('escapeHtml'), grab('titleOf'), grab('taggedSlugs'), grab('sidebarOrderSpecs'), grab('offeredOrders'), grab('shownOrder'), grab('renderSidebar')].join('\n') +
   '\nrenderSidebar(); return out.innerHTML; })');
@@ -116,17 +116,18 @@ function sidebarFor(sort, opts) {
   const file = function (path, ext) { const cut = path.lastIndexOf('/'); return { key: '/' + path, path: path, folder: cut < 0 ? '' : path.slice(0, cut), name: path.slice(cut + 1), title: path.slice(cut + 1), ext: ext }; };
   const pages = { Home: page('Home', 'Welcome'), 'Guides/Basics': page('Guides/Basics', 'Basics guide'), 'Guides/Advanced': page('Guides/Advanced', 'Zeta') };
   const files = opts.textOff ? {} : { 'Guides/data.csv': file('Guides/data.csv', 'csv'), 'Guides/notes.txt': file('Guides/notes.txt', 'txt'), 'top.js': file('top.js', 'js') };
-  const html = sidebarFactory({ pages: pages, files: files, mode: opts.mode || 'live', showAllText: !opts.textOff, sort: sort });
-  const items = []; const re = /data-slug="([^"]+)">([^<]*)<|<summary>([^<]*)</g; let m;
-  while ((m = re.exec(html))) items.push(m[3] !== undefined ? '[' + m[3] + ']' : m[2]);
+  const html = sidebarFactory({ pages: pages, files: files, mode: opts.mode || 'live', showAllText: !opts.textOff, sort: sort, order: opts.order || 'files' });
+  const items = []; const re = /href="#([^"]*)" data-slug="([^"]+)">([^<]*)<|<summary>([^<]*)</g; let m;
+  while ((m = re.exec(html))) items.push(m[4] !== undefined ? '[' + m[4] + ']' : (decodeURIComponent(m[1]) === m[2] ? '' : '(links to #' + m[1] + ') ') + m[3]);
   return items.join(' | ');
 }
-const sidebarCases = [ // [name, sort, options, the sidebar top to bottom: labels, [folder] headings]
+const sidebarCases = [
   ['by title: pages by title, files by name', 'title', {}, 'top.js | Welcome | [Guides] | Basics guide | data.csv | notes.txt | Zeta'],
   ['by file name', 'name', {}, 'Home.md | top.js | [Guides] | Advanced.md | Basics.md | data.csv | notes.txt'],
   ['by type, within folders', 'type', {}, 'top.js | Home.md | [Guides] | data.csv | Advanced.md | Basics.md | notes.txt'],
   ['grouped by type', 'type-grouped', {}, '[.csv] | Guides/data.csv | [.js] | top.js | [.md] | Guides/Advanced.md | Guides/Basics.md | Home.md | [.txt] | Guides/notes.txt'],
   ['type falls back to title with text files off', 'type', { textOff: true }, 'Welcome | [Guides] | Basics guide | Zeta'],
+  ['by type keeps extension order when folders mix in alphabetically', 'type', { order: 'alpha' }, '[Guides] | data.csv | Advanced.md | Basics.md | notes.txt | top.js | Home.md'],
   ['type falls back to title in bundled mode', 'type-grouped', { textOff: true, mode: 'bundled' }, 'Welcome | [Guides] | Basics guide | Zeta'],
 ];
 for (const [name, sort, opts, want] of sidebarCases) {
@@ -152,7 +153,7 @@ async function searchIn(folder, q) {
   const html = await searchFactory({ pages: pages, files: files, root: fakeDir(disk) })(folder, q);
   return (html.match(/href="#[^"]+"/g) || []).map(function (h) { return decodeURIComponent(h.slice(7, -1)); }).sort().join(', ');
 }
-const searchCases = [ // .md pages match from anywhere, other text files only from the folder on screen
+const searchCases = [
   ['Guides folder', 'Guides', '/Guides/notes.txt, Other/Deep'],
   ['root folder', '', '/top.txt, Other/Deep'],
   ['Other folder', 'Other', '/Other/far.txt, Other/Deep'],

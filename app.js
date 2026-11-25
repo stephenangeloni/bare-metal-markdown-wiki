@@ -49,6 +49,7 @@
   let mode = 'bundled';
   let showAllText = false;
   let folderTexts = { folder: null, items: [] };
+  let textRender = null;
   const heavyTextBytes = 1000000;
   let sidebarSort = 'title';
   let activeTag = '';
@@ -365,18 +366,21 @@
     renderBacklinks(slug);
   }
 
-  async function renderTextFile(key) {
-    const page = el('page'), h = liveHandle, file = FILES[key];
+  async function renderTextFile(key, alreadyOnScreen) {
+    const page = el('page'), h = liveHandle, file = FILES[key], mine = textRender = {};
     tocHtml = ''; el('backlinks').innerHTML = ''; placeToc();
-    page.innerHTML = crumbHtml(file.path);
+    if (!alreadyOnScreen) page.innerHTML = crumbHtml(file.path);
     let f = null, text = null;
-    try { f = await (await fileAt(h, file.path)).getFile(); text = await f.text(); }
-    catch (e) { text = null; }
-    if (shownPage !== key || liveHandle !== h || editing) return;
+    try {
+      f = await (await fileAt(h, file.path)).getFile();
+      text = f.size > heavyTextBytes ? new TextDecoder().decode(await f.slice(0, heavyTextBytes).arrayBuffer()) : await f.text();
+    } catch (e) { text = null; }
+    if (textRender !== mine || shownPage !== key || liveHandle !== h || editing) return;
     if (text === null) { page.innerHTML = crumbHtml(file.path) + '<p>Could not read <code>' + escapeHtml(file.path) + '</code>.</p>'; return; }
     const lang = window.hljs && hljs.getLanguage(file.ext) ? file.ext : 'plaintext';
-    page.innerHTML = crumbHtml(file.path) + '<pre class="text-file"><code class="language-' + escapeHtml(lang) + '">' + escapeHtml(text) + '</code></pre>';
-    if (f.size <= heavyTextBytes) highlightCode(page);
+    const cut = f.size > heavyTextBytes ? '<p class="meta">This file is ' + f.size.toLocaleString() + ' bytes; only the first ' + heavyTextBytes.toLocaleString() + ' are shown.</p>' : '';
+    page.innerHTML = crumbHtml(file.path) + cut + '<pre class="text-file"><code class="language-' + escapeHtml(lang) + '">' + escapeHtml(text) + '</code></pre>';
+    if (!cut) highlightCode(page);
     addCopyButtons(page);
   }
 
@@ -454,7 +458,11 @@
       const folderItems = Object.keys(node.subs).sort().map(function (sub) { return [sub, renderNode(sub, node.subs[sub], path)]; });
       let list = node.entries.slice().sort(spec.compare).map(function (e) { return [label(e), linkHtml(e)]; });
       if (sidebarOrder === 'folders') list = folderItems.concat(list);
-      else if (sidebarOrder === 'alpha') { list = list.concat(folderItems); list.sort(function (a, b) { return a[0].localeCompare(b[0]); }); }
+      else if (sidebarOrder === 'alpha') {
+        const merged = []; let next = 0;
+        list.forEach(function (item) { while (next < folderItems.length && folderItems[next][0].localeCompare(item[0]) < 0) merged.push(folderItems[next++]); merged.push(item); });
+        list = merged.concat(folderItems.slice(next));
+      }
       else list = list.concat(folderItems); // 'files': files first, then folders
       return list;
     };
@@ -513,14 +521,15 @@
     return i < 0 ? t.slice(0, 120) : t.slice(Math.max(0, i - 40), i + 90);
   }
   async function loadFolderTexts(folder) {
+    if (folderTexts.folder === folder) return;
     const h = liveHandle, mine = folderTexts = { folder: folder, items: [] };
-    for (const p of Object.keys(FILES)) {
-      if (FILES[p].folder !== folder) continue;
-      let text;
-      try { const f = await (await fileAt(h, FILES[p].path)).getFile(); if (f.size > heavyTextBytes) continue; text = await f.text(); }
-      catch (e) { continue; }
+    const files = Object.keys(FILES).map(function (k) { return FILES[k]; }).filter(function (file) { return file.folder === folder; });
+    for (const file of files) {
+      let text = null;
+      try { const f = await (await fileAt(h, file.path)).getFile(); if (f.size <= heavyTextBytes) text = await f.text(); }
+      catch (e) { text = null; }
       if (folderTexts !== mine || liveHandle !== h) return;
-      mine.items.push({ key: p, crumb: (folder ? folder + ' / ' : '') + FILES[p].name, haystack: (FILES[p].name + ' ' + text).toLowerCase(), plain: text.replace(/\s+/g, ' ') });
+      if (text !== null) mine.items.push({ key: file.key, crumb: (folder ? folder + ' / ' : '') + file.name, haystack: (file.name + ' ' + text).toLowerCase(), plain: text.replace(/\s+/g, ' ') });
     }
   }
   function doSearch(q) {
@@ -556,7 +565,7 @@
     el('sortBy').innerHTML = offeredOrders().map(function (o) { return '<option value="' + o + '">' + specs[o].menu + '</option>'; }).join('');
     el('sortBy').value = shownOrder();
   }
-  function closeModeMenu() { el('modeMenu').classList.add('hidden'); el('mode').setAttribute('aria-expanded', 'false'); }
+  function closeModeMenu() { if (el('modeMenu').contains(document.activeElement)) el('mode').focus(); el('modeMenu').classList.add('hidden'); el('mode').setAttribute('aria-expanded', 'false'); }
 
   // ---------- routing ----------
   function closeNav() { // narrow-screen drawer: close it (also a harmless no-op on wide screens)
@@ -577,10 +586,11 @@
   }
   function showPage(slug) {
     if (editing && editing.cm) editing.cm.toTextArea();
+    const textAlreadyOnScreen = shownPage === slug && !editing;
     shownPage = slug; editing = null;
     el('page').classList.remove('home');
     if (!slug) { document.title = renderLanding() + ' — ' + wikiName; }
-    else if (FILES[slug]) { renderTextFile(slug); document.title = FILES[slug].name + ' — ' + wikiName; }
+    else if (FILES[slug]) { renderTextFile(slug, textAlreadyOnScreen); document.title = FILES[slug].name + ' — ' + wikiName; }
     else { renderPage(slug); document.title = titleOf(slug) + ' — ' + wikiName; }
     const onScreen = slug || (landingPage && PAGES[landingPage] ? landingPage : '');
     loadFolderTexts(PAGES[onScreen] ? PAGES[onScreen].folder : FILES[onScreen] ? FILES[onScreen].folder : '');
@@ -593,16 +603,20 @@
     IMAGES = {}; TEXTRAW = [];
   }
   async function loadLive(handle) {
-    const live = { stamp: '', raw: [], images: {}, texts: [] };
+    const live = { stamp: stampHeader(), raw: [], images: {}, texts: [] };
     await walkDir(handle, '', live);
     return live;
   }
   function applyLive(live) { liveStamp = live.stamp; RAW = live.raw; IMAGES = live.images; TEXTRAW = live.texts; }
+  function stampHeader() { return 'all text files: ' + showAllText + '\n'; }
   async function folderStamp(dir, prefix = '') {
     let stamp = '';
     for await (const e of dir.values()) {
-      if (e.kind === 'directory') stamp += await folderStamp(e, prefix + e.name + '/');
-      else if (watched(prefix + e.name)) stamp += prefix + e.name + ':' + (await e.getFile()).lastModified + '\n';
+      const path = prefix + e.name;
+      if (e.kind === 'directory') { stamp += await folderStamp(e, path + '/'); continue; }
+      if (!watched(path)) continue;
+      const f = await watchedFile(e, path);
+      if (f) stamp += path + ':' + f.lastModified + '\n';
     }
     return stamp;
   }
@@ -689,6 +703,13 @@
   const chromeSaveTempFile = /\.crswap$/i;
   function listsAsText(path) { return showAllText && !/\.md$/i.test(path) && !chromeSaveTempFile.test(path) && !/(^|\/)\./.test(path); }
   function watched(path) { return /\.md$/i.test(path) || imgExtRe.test(path) || listsAsText(path); }
+  async function watchedFile(entry, path) {
+    if (/\.md$/i.test(path) || imgExtRe.test(path)) return entry.getFile();
+    try { return await entry.getFile(); } catch (e) { return null; }
+  }
+  async function looksLikeText(f) {
+    try { return isTextSample(new Uint8Array(await f.slice(0, 4096).arrayBuffer())); } catch (e) { return false; }
+  }
   function isTextSample(bytes) {
     if (bytes.indexOf(0) !== -1) return false;
     try { new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: true }); return true; } catch (e) { return false; }
@@ -698,11 +719,12 @@
       const path = prefix + e.name;
       if (e.kind === 'directory') { await walkDir(e, path + '/', live); continue; }
       if (!watched(path)) continue;
-      const f = await e.getFile();
+      const f = await watchedFile(e, path);
+      if (!f) continue;
       live.stamp += path + ':' + f.lastModified + '\n';
       if (/\.md$/i.test(path)) { live.raw.push({ slug: path.replace(/\.md$/i, ''), path: path, mtime: Math.floor(f.lastModified / 1000), src: await f.text() }); continue; }
       if (imgExtRe.test(path)) live.images[path] = await fileToDataURI(f, e.name);
-      if (listsAsText(path) && isTextSample(new Uint8Array(await f.slice(0, 4096).arrayBuffer()))) live.texts.push({ path: path, mtime: Math.floor(f.lastModified / 1000) });
+      if (listsAsText(path) && await looksLikeText(f)) live.texts.push({ path: path, mtime: Math.floor(f.lastModified / 1000) });
     }
   }
   async function fileToDataURI(f, name) {
@@ -756,7 +778,7 @@
   }
   function leaveLive() { // the way back out: bundled snapshot now, and this wiki forgets the folder so the next open does not quietly live-render it again
     if (editing || mode !== 'live') return;
-    liveHandle = null; liveStamp = ''; mode = 'bundled';
+    liveHandle = null; liveStamp = ''; mode = 'bundled'; loading = null;
     IDB.del(dirKey).catch(function () {}); // best effort: if IDB is broken, the cost is just the folder reopening next time
     loadBundled();
     buildIndex(); renderTags(); renderSidebar(); setMode('bundled');
@@ -772,7 +794,7 @@
     if (mode !== 'live' || loading || document.hidden) return;
     const mine = loading = { h: liveHandle };
     let changed = false;
-    try { changed = (await folderStamp(liveHandle)) !== liveStamp; } catch (e) {}
+    try { changed = stampHeader() + (await folderStamp(liveHandle)) !== liveStamp; } catch (e) {}
     if (loading !== mine) return;
     loading = null;
     if (changed) { lastRefresh = 0; await refreshLive(); }
@@ -1061,7 +1083,7 @@
       if (open) el('modeMenu').querySelector('.mode-item:not(.hidden)').focus();
     });
     document.addEventListener('click', function (e) { if (!e.target.closest('.mode-wrap')) closeModeMenu(); });
-    el('modeMenu').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.stopPropagation(); closeModeMenu(); el('mode').focus(); } });
+    el('modeMenu').addEventListener('keydown', function (e) { if (e.key === 'Escape') { e.stopPropagation(); closeModeMenu(); } });
     document.querySelector('.mode-wrap').addEventListener('focusout', function (e) { if (!e.currentTarget.contains(e.relatedTarget)) closeModeMenu(); });
     el('choose').addEventListener('click', function () { closeModeMenu(); chooseFolder(); });
     el('leave').addEventListener('click', function () { closeModeMenu(); leaveLive(); });

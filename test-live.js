@@ -4,18 +4,18 @@
 const grab = require('./test-grab.js');
 const GRABBED = ['titleOf', 'parseFrontmatter', 'buildIndex', 'renderLanding', 'route', 'loadLive', 'folderStamp', 'fileAt', 'versionOf', 'readForEdit', 'saveFile',
   'applyLive', 'showPage', 'walkDir', 'showFolder', 'chooseFolder', 'refreshLive', 'pollLive', 'editMsg', 'draftReadOnly', 'lockEditor', 'makeEditor', 'draftText', 'openEditor', 'saveEditor', 'cancelEditor', 'leaveLive',
-  'splitLines', 'matchLines', 'merge3', 'changedLines', 'checkEditedPage', 'mergeIncoming', 'showChanges', 'reconcile', 'putMerged', 'showConflicts', 'pickConflict', 'isTextSample', 'chromeSaveTempFile', 'listsAsText', 'watched', 'renderTextFile', 'heavyTextBytes'].map(grab).join('\n');
+  'splitLines', 'matchLines', 'merge3', 'changedLines', 'checkEditedPage', 'mergeIncoming', 'showChanges', 'reconcile', 'putMerged', 'showConflicts', 'pickConflict', 'isTextSample', 'chromeSaveTempFile', 'listsAsText', 'watched', 'renderTextFile', 'heavyTextBytes', 'loadFolderTexts', 'stampHeader', 'watchedFile', 'looksLikeText'].map(grab).join('\n');
 
 const factory = (0, eval)(`(function (env) {
   const el = env.el, location = env.location, document = env.document, window = env.window || {};
   const showDirectoryPicker = function () { return env.pick(); };
-  const imgExtRe = /\\.png$/i, wikiName = 'W', dirKey = 'dir /w/';
+  const imgExtRe = /\\.(png|svg)$/i, wikiName = 'W', dirKey = 'dir /w/';
   const IDB = { set: async function (k) { env.savedKey = k; }, del: async function () { env.forgot = true; } };
-  function loadBundled() { RAW = env.bundled || []; IMAGES = {}; } // env.bundled is the stand-in for data.js's PAGES_BUNDLED
+  function loadBundled() { RAW = env.bundled || []; IMAGES = {}; TEXTRAW = []; } // env.bundled is the stand-in for data.js's PAGES_BUNDLED
   let RAW = [], PAGES = {}, IMAGES = {}, STEM = {}, mode = 'bundled', liveHandle = null, lastRefresh = 0, liveStamp = '', editing = null, shownPage = '', loading = null, tocHtml = '', buildReminder = null;
   let landingPage = env.landingPage || '';
-  let FILES = {}, TEXTRAW = [], showAllText = !!env.showAllText;
-  function highlightCode() {} function addCopyButtons() {} function loadFolderTexts() {}
+  let FILES = {}, TEXTRAW = [], showAllText = !!env.showAllText, folderTexts = { folder: null, items: [] }, textRender = null;
+  function highlightCode() {} function addCopyButtons() {}
   function closeNav() {} function renderSidebar() {} function renderTags() {} function placeToc() {} function markActive() {}
   function setMode(m) { env.label = m === 'live' ? liveHandle.name : 'bundled'; }
   function crumbHtml(slug) { return '<nav>' + slug + '</nav>'; }
@@ -36,6 +36,7 @@ const factory = (0, eval)(`(function (env) {
     async start(h) { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; buildIndex(); setMode('live'); route(); },
     forceRefresh() { lastRefresh = 0; return refreshLive(); },
     setShowAllText(on) { showAllText = on; },
+    get files() { return Object.keys(FILES); }, get folderTexts() { return folderTexts; }, get mode() { return mode; },
     get editing() { return editing; }, get pages() { return PAGES; }, get handle() { return liveHandle && liveHandle.name; }
   };
 })`);
@@ -1215,6 +1216,200 @@ t('a text file with no extension and a page of the same name both open', async f
   w.go('#foo'); await settle();
   check(bad, w.screen().includes('PAGE foo') && w.screen().includes('the page'), '#foo: ' + w.screen());
   return bad;
+});
+
+function modelScroll(w) {
+  const c = w.env.el('content'); let top = 0; const log = [];
+  Object.defineProperty(c, 'scrollTop', {
+    get() { return top; },
+    set(v) { const tall = /<pre|^PAGE /.test(w.screen()); log.push({ asked: v, pageAtThatMoment: w.screen() }); top = tall ? v : 0; }
+  });
+  return { el: c, log: log, force(v) { top = v; } };
+}
+
+t('OPUS-1 / SONNET-1: a poll that finds a change elsewhere keeps the scroll position of the open text file', async function () {
+  const tree = { 'Home.md': page('home'), 'notes.log': page('line\n'.repeat(500)) }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#/notes.log', showAllText: true }); await w.app.start(f.root); await settle();
+  const s = modelScroll(w); s.force(500);
+  tree['Home.md'] = page('home v2'); await w.app.pollLive(); await settle();
+  const bad = [];
+  const last = s.log[s.log.length - 1];
+  check(bad, s.el.scrollTop === 500, 'scroll after the poll is ' + s.el.scrollTop + ' (was 500); the restore ran while the page held only: ' + JSON.stringify(last && last.pageAtThatMoment));
+  return bad;
+});
+
+t('control: the same poll keeps the scroll position of an open Markdown page', async function () {
+  const tree = { 'Home.md': page('home'), 'Other.md': page('o') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home', showAllText: true }); await w.app.start(f.root); await settle();
+  const s = modelScroll(w); s.force(500);
+  tree['Other.md'] = page('o v2'); await w.app.pollLive(); await settle();
+  return s.el.scrollTop === 500 ? [] : ['md page scroll is ' + s.el.scrollTop];
+});
+
+t('OPUS-2 / SONNET-5 / SOL-3: an older read of the same text file that finishes last does not replace the newer text', async function () {
+  const tree = { 'Home.md': page('home'), 'notes.txt': page('v1') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home', showAllText: true }); await w.app.start(f.root); await settle();
+  f.ctl.hold.add('notes.txt');
+  w.go('#/notes.txt'); await settle();
+  tree['notes.txt'] = page('v2'); await w.app.pollLive(); await settle();
+  const mine = f.ctl.pending.filter(function (x) { return x.path === 'notes.txt'; });
+  f.ctl.hold.clear();
+  mine.reverse().forEach(function (x) { f.ctl.pending.splice(f.ctl.pending.indexOf(x), 1); x.res(); });
+  await settle();
+  const bad = [];
+  check(bad, mine.length >= 2, 'setup: expected the view read and the refresh read both in flight, got ' + mine.length);
+  check(bad, w.screen().includes('v2'), 'disk has v2, screen shows: ' + w.screen());
+  await w.app.pollLive(); await settle();
+  check(bad, w.screen().includes('v2'), 'and the next poll does not correct it: ' + w.screen());
+  return bad;
+});
+
+t('SOL-1: turning the toggle on lists an .svg that was already watched as an image', async function () {
+  const tree = { 'Home.md': page('home'), 'diagram.svg': page('<svg></svg>') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root); await settle();
+  w.app.setShowAllText(true); await w.app.forceRefresh(); await settle();
+  await w.app.pollLive(); await w.app.pollLive(); await settle();
+  return w.app.files.indexOf('/diagram.svg') !== -1 ? [] : ['toggle on, a refresh and two polls later the listed text files are: ' + JSON.stringify(w.app.files)];
+});
+
+t('SOL-1: turning the toggle off stops listing that .svg', async function () {
+  const tree = { 'Home.md': page('home'), 'diagram.svg': page('<svg></svg>') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home', showAllText: true }); await w.app.start(f.root); await settle();
+  const bad = [];
+  check(bad, w.app.files.indexOf('/diagram.svg') !== -1, 'setup: svg not listed with the toggle on from the start: ' + JSON.stringify(w.app.files));
+  w.app.setShowAllText(false); await w.app.forceRefresh(); await settle();
+  await w.app.pollLive(); await w.app.pollLive(); await settle();
+  check(bad, w.app.files.length === 0, 'toggle off, a refresh and two polls later still listed: ' + JSON.stringify(w.app.files));
+  return bad;
+});
+
+t('OPUS-5: a toggle flipped while another folder is loading is corrected by the next poll at the latest', async function () {
+  const treeA = { 'Home.md': page('A home') }; const a = fakeFolder('A', treeA);
+  const treeB = { 'diagram.svg': page('<svg></svg>'), 'Slow.md': page('s') }; const b = fakeFolder('B', treeB);
+  const w = makeApp({ hash: '#Home', showAllText: true }); await w.app.start(a.root); await settle();
+  b.ctl.hold.add('Slow.md');
+  w.env.pick = async function () { return b.root; };
+  const c = w.app.chooseFolder(); await settle();
+  w.app.setShowAllText(false); w.app.forceRefresh();
+  b.releaseAll(); await c; await settle();
+  const bad = [];
+  check(bad, w.app.handle === 'B', 'setup: the switch to B should have landed, folder is ' + w.app.handle);
+  await w.app.pollLive(); await settle();
+  check(bad, w.app.files.length === 0, 'toggle off, one poll after the switch, still listed: ' + JSON.stringify(w.app.files));
+  return bad;
+});
+
+t('SOL-2: Back to bundled during a slow live refresh stays bundled', async function () {
+  const tree = { 'Home.md': page('live home'), 'Slow.md': page('s') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); w.env.bundled = [{ slug: 'Home', mtime: 1, src: 'bundled home' }];
+  await w.app.start(f.root); await settle();
+  tree['Home.md'] = page('live home v2');
+  f.ctl.hold.add('Slow.md');
+  const r = w.app.forceRefresh(); await settle();
+  w.app.leaveLive();
+  const bad = [];
+  check(bad, w.env.label === 'bundled' && w.screen().includes('bundled home'), 'setup: right after leaving: ' + w.env.label + ' / ' + w.screen());
+  f.releaseAll(); await r; await settle();
+  check(bad, w.app.mode === 'bundled' && w.env.label === 'bundled' && w.screen().includes('bundled home'), 'after the refresh finished: mode ' + w.app.mode + ', badge ' + w.env.label + ', screen ' + w.screen());
+  return bad;
+});
+
+function breakFile(f, name, how) {
+  const orig = f.root.values.bind(f.root);
+  f.root.values = async function* () {
+    for await (const e of orig()) {
+      if (e.name !== name) { yield e; continue; }
+      const get = e.getFile.bind(e);
+      e.getFile = async function () {
+        if (how === 'getFile') throw new Error('NotReadableError');
+        const file = await get();
+        file.slice = function () { return { async arrayBuffer() { throw new Error('NotReadableError'); } }; };
+        file.text = async function () { throw new Error('NotReadableError'); };
+        return file;
+      };
+      yield e;
+    }
+  };
+}
+for (const how of ['read', 'getFile']) {
+  t('SOL-4: with the toggle on, one unreadable non-Markdown file (' + how + ' fails) does not stop Home.md updates', async function () {
+    const tree = { 'Home.md': page('v1'), 'locked.db': page('x') }; const f = fakeFolder('A', tree);
+    const w = makeApp({ hash: '#Home', showAllText: true }); await w.app.start(f.root); await settle();
+    breakFile(f, 'locked.db', how);
+    tree['Home.md'] = page('their v2');
+    await w.app.pollLive(); await w.app.pollLive(); await w.app.forceRefresh(); await settle();
+    return w.screen().includes('their v2') ? [] : ['two polls and a manual refresh later the screen still shows: ' + w.screen()];
+  });
+  t('SOL-4: with the toggle on, a folder holding one unreadable non-Markdown file (' + how + ' fails) can still be opened', async function () {
+    const tree = { 'Home.md': page('B home'), 'locked.db': page('x') }; const f = fakeFolder('B', tree);
+    breakFile(f, 'locked.db', how);
+    const w = makeApp({ hash: '#Home', showAllText: true });
+    w.env.pick = async function () { return f.root; };
+    await w.app.chooseFolder(); await settle();
+    return w.env.label === 'B' ? [] : ['after choosing the folder the badge says: ' + JSON.stringify(w.env.label) + ' and the screen: ' + JSON.stringify(w.screen())];
+  });
+}
+t('control: with the toggle off, the same unreadable file is ignored', async function () {
+  const tree = { 'Home.md': page('v1'), 'locked.db': page('x') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root); await settle();
+  breakFile(f, 'locked.db', 'getFile');
+  tree['Home.md'] = page('their v2'); await w.app.pollLive(); await settle();
+  return w.screen().includes('their v2') ? [] : ['screen: ' + w.screen()];
+});
+
+t('SOL-6 / SONNET-2: an oversized file whose read was pending while the index was rebuilt does not throw', async function () {
+  const tree = { 'Home.md': page('home'), 'big.log': page('x'.repeat(1000001)), 'z.txt': page('z'), sub: { 'x.md': page('x') } }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#sub/x', showAllText: true }); await w.app.start(f.root); await settle();
+  const orig = f.root.getFileHandle.bind(f.root); let release = null;
+  f.root.getFileHandle = async function (n) { if (n === 'big.log' && !release) await new Promise(function (res) { release = res; }); return orig(n); };
+  const seen = []; const onReject = function (e) { seen.push(e); }; process.on('unhandledRejection', onReject);
+  w.go('#Home'); await settle();
+  const bad = [];
+  check(bad, typeof release === 'function', 'setup: the folder-text read of big.log should be pending');
+  w.app.setShowAllText(false); await w.app.forceRefresh(); await settle();
+  check(bad, w.app.files.length === 0, 'setup: the index should hold no text files now: ' + JSON.stringify(w.app.files));
+  if (release) release();
+  await settle(); await settle();
+  process.removeListener('unhandledRejection', onReject);
+  check(bad, seen.length === 0, 'unhandled rejection: ' + (seen[0] && seen[0].message));
+  return bad;
+});
+
+t('SONNET-3: opening a second file in the same folder does not re-read the folder or empty its search list', async function () {
+  const tree = { 'Home.md': page('home'), 'a.txt': page('needle a'), 'b.txt': page('needle b') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#/a.txt', showAllText: true }); await w.app.start(f.root); await settle();
+  const bad = [];
+  check(bad, w.app.folderTexts.items.length === 2, 'setup: both files should be searchable: ' + w.app.folderTexts.items.length);
+  const orig = f.root.getFileHandle.bind(f.root); const reads = [];
+  f.root.getFileHandle = async function (n) { reads.push(n); return orig(n); };
+  w.go('#/b.txt');
+  check(bad, w.app.folderTexts.items.length === 2, 'right after the click, searchable text files in the folder: ' + w.app.folderTexts.items.length + ' (a search typed now finds none of them)');
+  await settle();
+  check(bad, reads.join() === 'b.txt', 'files read for one click in the same folder: ' + reads.join());
+  return bad;
+});
+
+t('OPUS-4 / SONNET-4: a text file over the heavy limit is not read whole into the page', async function () {
+  const tree = { 'Home.md': page('home'), 'big.log': page('x'.repeat(3000000)) }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#/big.log', showAllText: true }); await w.app.start(f.root); await settle();
+  return w.screen().length < 2000000 ? [] : ['the page now holds ' + w.screen().length + ' characters of a 3,000,000-byte file'];
+});
+
+t('navigating away while a text file is still being read leaves the new page on screen', async function () {
+  const tree = { 'Home.md': page('home'), 'notes.txt': page('slow text') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home', showAllText: true }); await w.app.start(f.root); await settle();
+  f.ctl.hold.add('notes.txt');
+  w.go('#/notes.txt'); await settle();
+  w.go('#Home'); await settle();
+  f.releaseAll(); await settle();
+  return w.screen().startsWith('PAGE Home') ? [] : ['the late read painted over the page: ' + w.screen()];
+});
+
+t('opening a text file in a subfolder makes that folder\'s text files, and only those, searchable', async function () {
+  const tree = { 'Home.md': page('home'), 'top.txt': page('top'), sub: { 'a.txt': page('a'), 'b.json': page('{}'), deeper: { 'c.txt': page('c') } } }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#/sub/a.txt', showAllText: true }); await w.app.start(f.root); await settle();
+  const got = w.app.folderTexts.items.map(function (i) { return i.key; }).sort().join(', ');
+  return got === '/sub/a.txt, /sub/b.json' ? [] : ['searchable text files: ' + got];
 });
 
 (async function () {
