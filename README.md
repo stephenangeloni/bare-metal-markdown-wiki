@@ -216,9 +216,9 @@ is `.EasyMDEContainer .CodeMirror`, the toolbar `.editor-toolbar`).
 `index-all.html` is `index.html` with `app.js`, `style.css`, `config.js`,
 `user.css` and everything in `vendor/` (KaTeX fonts included) inlined. It needs
 only `data.js` next to it, so put it beside `articles/` and the build script,
-run the build, and open it. It carries the repository's `config.js` and
-`user.css` as committed, so local edits to those two files have no effect on it
-until you commit them.
+run the build, and open it. It carries `config.js` and `user.css` as they were
+when it was built, so edits to those two files reach it at the next commit that
+stages them.
 
 It is committed, and kept in step by a pre-commit hook. Turn the hook on once
 per clone (it needs Node.js):
@@ -230,8 +230,11 @@ git config core.hooksPath .githooks
 Each commit then rebuilds `index-all.html` from the staged files and adds it
 to the commit. A merge where both sides changed it stops with a conflict on
 `index-all.html`; run `git add index-all.html` and `git commit`, and the hook
-rebuilds it from the merged files. CI fails any push to `main` or pull request
-whose `index-all.html` is out of date.
+rebuilds it from the merged files. The hook refuses a `git commit <path>` that
+would change `index-all.html`; stage with `git add` and commit without paths.
+`git rebase` (and `git pull --rebase`) does not run the hook: after one, run
+`node bundle.js` and commit `index-all.html` if it changed. CI fails any push
+to `main` or pull request whose `index-all.html` is out of date.
 
 ## Markdown conventions
 

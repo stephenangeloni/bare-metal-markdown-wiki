@@ -35,6 +35,21 @@ check('a commit rebuilds index-all.html from the staged files', committed('HEAD'
 check('unstaged edits stay out of the committed index-all.html', !committed('HEAD').includes('hookTestUnstaged'));
 git('checkout', '-q', '--', 'app.js');
 
+appendTo('app.js', '\n;window.hookTestPartial = 1;\n');
+appendTo('README.md', '\npartial\n');
+git('add', 'README.md');
+const before = git('rev-parse', 'HEAD');
+let refused = '';
+try { git('commit', '-q', '-m', 'partial', 'app.js'); } catch (e) { refused = e.stderr; }
+check('a partial commit that changes index-all.html is refused', refused.includes('git commit without paths') && git('rev-parse', 'HEAD') === before);
+git('checkout', '-q', 'HEAD', '--', 'app.js', 'README.md');
+appendTo('articles/Home.md', '\npartial\n');
+appendTo('README.md', '\npartial\n');
+git('add', 'README.md');
+git('commit', '-q', '-m', 'partial article', 'articles/Home.md');
+check('a partial commit that leaves index-all.html alone goes through', git('log', '-1', '--format=%s') === 'partial article\n');
+git('checkout', '-q', 'HEAD', '--', 'README.md');
+
 git('checkout', '-q', '-b', 'side');
 appendTo('style.css', '\n.hook-test-side{}\n');
 git('commit', '-q', '-am', 'side style');
