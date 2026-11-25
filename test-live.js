@@ -1427,6 +1427,22 @@ t('switching to another folder that has a file of the same name does not show th
   return bad;
 });
 
+t('a text file over the size limit is found in search by its name', async function () {
+  const tree = { 'Home.md': page('home'), 'server.log': page('x'.repeat(1200000)), 'small.txt': page('s') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home', showAllText: true }); await w.app.start(f.root); await settle();
+  const item = w.app.folderTexts.items.find(function (i) { return i.key === '/server.log'; });
+  return item && item.haystack.indexOf('server.log') !== -1 && item.haystack.indexOf('xxx') === -1 ? [] : ['search entry for server.log: ' + JSON.stringify(item && item.haystack.slice(0, 40))];
+});
+
+t('a multibyte character cut at the size limit does not show as a replacement character', async function () {
+  const tree = { 'Home.md': page('home'), 'big.log': page('x'.repeat(999999) + '\u20ac' + 'y'.repeat(100)) }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#/big.log', showAllText: true }); await w.app.start(f.root); await settle();
+  const bad = [];
+  check(bad, w.screen().includes('only the first'), 'setup: the cut note should show: ' + w.screen().slice(0, 200));
+  check(bad, w.screen().indexOf('\ufffd') === -1, 'the shown text ends with: ' + JSON.stringify(w.screen().slice(-40)));
+  return bad;
+});
+
 (async function () {
   let bad = 0;
   for (const [name, fn] of tests) {

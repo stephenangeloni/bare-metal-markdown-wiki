@@ -373,7 +373,7 @@
     let f = null, text = null;
     try {
       f = await (await fileAt(h, file.path)).getFile();
-      text = f.size > heavyTextBytes ? new TextDecoder().decode(await f.slice(0, heavyTextBytes).arrayBuffer()) : await f.text();
+      text = f.size > heavyTextBytes ? new TextDecoder().decode(await f.slice(0, heavyTextBytes).arrayBuffer(), { stream: true }) : await f.text();
     } catch (e) { text = null; }
     if (textRender !== mine || shownPage !== key || liveHandle !== h || editing) return;
     if (text === null) { page.innerHTML = crumbHtml(file.path) + '<p>Could not read <code>' + escapeHtml(file.path) + '</code>.</p>'; return; }
@@ -527,7 +527,7 @@
     const files = Object.keys(FILES).map(function (k) { return FILES[k]; }).filter(function (file) { return file.folder === folder; });
     for (const file of files) {
       let text = null;
-      try { const f = await (await fileAt(h, file.path)).getFile(); if (f.size <= heavyTextBytes) text = await f.text(); }
+      try { const f = await (await fileAt(h, file.path)).getFile(); text = f.size > heavyTextBytes ? '' : await f.text(); }
       catch (e) { text = null; }
       if (folderTexts !== mine || liveHandle !== h) return;
       if (text !== null) mine.items.push({ key: file.key, crumb: (folder ? folder + ' / ' : '') + file.name, haystack: (file.name + ' ' + text).toLowerCase(), plain: text.replace(/\s+/g, ' ') });

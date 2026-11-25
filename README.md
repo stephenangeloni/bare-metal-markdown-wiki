@@ -108,7 +108,8 @@ wiki also lists every other text file in the folder (`.txt`, `.js`, `.json`,
 `.csv`, …) and opens it as highlighted source. A file counts as text when its
 first 4 KB contain no NUL byte and are valid UTF-8. Files and folders whose
 name starts with a dot (`.git`, `.env`) are never listed. Search covers these
-files only in the folder of the file on screen, and skips any over 1 MB. The
+files only in the folder of the file on screen; a file over 1 MB matches by
+its name only, and opens showing its first 1 MB. The
 choice is remembered in this browser.
 
 #### Sidebar order
