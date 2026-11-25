@@ -127,7 +127,10 @@ first to switch folders.
   10,000-line page about 0.7 s and 400 MB.
 - Pages are saved as UTF-8 text without a byte-order mark. A page in another
   encoding (for example Windows "ANSI") cannot be edited here; convert it to
-  UTF-8 first.
+  UTF-8 first. If someone saves the page in another encoding while you edit
+  it, Save refuses and keeps your text. The wiki recognises such pages by the
+  character `�`, so a page that contains a literal `�` cannot be edited or
+  saved over here either.
 - A file with Windows line endings keeps them when saved.
 - Leaving the page while editing discards unsaved changes.
 - Firefox and Safari cannot write to a folder, so they get no Edit button and
