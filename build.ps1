@@ -19,23 +19,3 @@ $ps = New-Object System.Text.StringBuilder
 [void]$ps.AppendLine('];')
 [IO.File]::WriteAllText($out, $ps.ToString())
 Write-Host "Wrote data.js ($($entries.Count) pages)"
-
-$start = '<!-- style.css -->'
-$end = '<!-- /style.css -->'
-$index = Join-Path $PWD 'index.html'
-$html = [IO.File]::ReadAllText($index)
-if (-not $html.Contains($end)) { throw "index.html has no $start ... $end markers, so style.css was not inlined." }
-$css = [IO.File]::ReadAllText((Join-Path $PWD 'style.css')) -replace '[\r\n\t\f]', ' ' -replace '/\*[^*]*\*+([^/*][^*]*\*+)*/', '' -replace ' +', ' ' -replace ' ?([{};,>]) ?', '$1' -replace ';}', '}'
-$css = $css.Trim(' ')
-$lines = New-Object System.Collections.Generic.List[string]
-$skip = $false
-foreach ($line in ($html -split "`n")) {
-  if ($skip) {
-    if ($line.Contains($end)) { $skip = $false; $lines.Add($line) }
-    continue
-  }
-  $lines.Add($line)
-  if ($line.Contains($start)) { $skip = $true; $lines.Add('  <style>' + $css + '</style>') }
-}
-[IO.File]::WriteAllText($index, ($lines -join "`n"))
-Write-Host "Inlined style.css into index.html ($($css.Length) chars)"
