@@ -487,6 +487,9 @@ img { max-width: 100%; border-radius: 6px; }
   padding: 3px 10px;
   border-radius: 20px;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 button.mode { background: var(--bg); cursor: pointer; }
 button.mode::after { content: ' \25BE'; }
@@ -495,7 +498,8 @@ button.mode:disabled::after { content: none; }
 button.mode:hover:not(:disabled) { background: var(--hover); }
 .mode.live { color: var(--ok); border-color: currentColor; background: var(--ok-soft); }
 button.mode.live:hover { background: var(--ok-soft); filter: brightness(0.96); }
-.mode-wrap { position: relative; }
+.mode-wrap { position: relative; min-width: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .mode-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -586,7 +590,7 @@ button.mode.live:hover { background: var(--ok-soft); filter: brightness(0.96); }
 
 /* mode badge + live-render buttons travel together: app.js moves this
    whole group into the drawer on narrow screens */
-.modegrp { display: flex; align-items: center; gap: 8px; justify-self: end; }
+.modegrp { display: flex; align-items: center; gap: 8px; justify-self: end; min-width: 0; max-width: 100%; }
 
 /* ── 3. Layout & sidebar ─────────────────────────────────── */
 
@@ -964,7 +968,7 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
   .search-wrap { flex: 1 1 auto; }
   .search-kbd { display: none; }
   .brand { display: none; } /* name + brand icon give way to the mode group in the drawer */
-  .sidebar .modegrp { flex-wrap: wrap; margin: 0 4px 14px; }
+  .sidebar .modegrp { flex-wrap: wrap; margin: 0 4px 14px; max-width: calc(100% - 8px); }
   /* the sidebar becomes an off-canvas drawer over the article:
      slides in when body.nav-open, dimmed backdrop behind it */
   .sidebar {
@@ -1199,6 +1203,7 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
           <button id="choose" class="mode-item hidden" type="button" title="Point the wiki at a folder for live rendering (remembered).">Live render a folder…</button>
           <button id="leave" class="mode-item hidden" type="button" title="Go back to the bundled data.js snapshot. This wiki then forgets the folder until you pick one again.">Back to bundled (data.js)</button>
         </div>
+        <span id="scanNote" class="sr-only" role="status"></span>
       </div>
       <button id="themeBtn" class="btn icon-btn theme-btn" type="button" data-theme="system" title="Theme: System" aria-label="Theme: System"><svg class="i-system" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M8 2.5a5.5 5.5 0 0 1 0 11z" fill="currentColor"/></svg><svg class="i-light" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></g></svg><svg class="i-dark" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 9.5A5.5 5.5 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" fill="none"/></svg></button>
       <button id="refresh" class="btn icon-btn hidden" type="button" title="Re-read the connected folder now (live mode)" aria-label="Re-read folder"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg></button>
@@ -5314,6 +5319,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
   // ---------- mode ----------
   function setMode(m) {
     const e = el('mode');
+    el('scanNote').textContent = '';
     e.textContent = m === 'live' ? ('live · ' + (liveHandle ? liveHandle.name : 'folder')) : 'bundled · data.js';
     e.className = 'mode' + (m === 'live' ? ' live' : '');
     el('refresh').classList.toggle('hidden', m !== 'live');
@@ -5364,9 +5370,9 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     RAW = (window.PAGES_BUNDLED || []).map(function (p) { return { slug: p.slug, mtime: p.mtime, src: b64toUtf8(p.content) }; });
     IMAGES = Object.create(null); TEXTRAW = [];
   }
-  async function loadLive(handle) {
+  async function loadLive(handle, scan) {
     const live = { stamp: stampHeader(), raw: [], images: Object.create(null), texts: [] };
-    await walkDir(handle, '', live);
+    await walkDir(handle, '', live, scan);
     return live;
   }
   function applyLive(live) { liveStamp = live.stamp; RAW = live.raw; IMAGES = live.images; TEXTRAW = live.texts; }
@@ -5476,18 +5482,35 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     if (bytes.indexOf(0) !== -1) return false;
     try { new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: true }); return true; } catch (e) { return false; }
   }
-  async function walkDir(handle, prefix, live) { // same files and order as folderStamp, so the stamp comes from this one pass
+  async function walkDir(handle, prefix, live, scan) { // same files and order as folderStamp, so the stamp comes from this one pass
+    const folder = prefix.slice(0, -1);
+    if (scan) scan.enter(folder);
     for await (const e of handle.values()) {
       const path = prefix + e.name;
-      if (e.kind === 'directory') { await walkDir(e, path + '/', live); continue; }
+      if (e.kind === 'directory') { await walkDir(e, path + '/', live, scan); continue; }
       if (!watched(path)) continue;
       const f = await watchedFile(e, path);
       if (!f) continue;
       live.stamp += path + ':' + f.lastModified + '\n';
-      if (/\.md$/i.test(path)) { live.raw.push({ slug: path.replace(/\.md$/i, ''), path: path, mtime: Math.floor(f.lastModified / 1000), src: await f.text() }); continue; }
-      if (imgExtRe.test(path)) live.images[path] = await fileToDataURI(f, e.name);
-      if (listsAsText(path) && await looksLikeText(f)) live.texts.push({ path: path, mtime: Math.floor(f.lastModified / 1000) });
+      if (/\.md$/i.test(path)) live.raw.push({ slug: path.replace(/\.md$/i, ''), path: path, mtime: Math.floor(f.lastModified / 1000), src: await f.text() });
+      else {
+        if (imgExtRe.test(path)) live.images[path] = await fileToDataURI(f, e.name);
+        if (listsAsText(path) && await looksLikeText(f)) live.texts.push({ path: path, mtime: Math.floor(f.lastModified / 1000) });
+      }
+      if (scan) scan.read(folder);
     }
+  }
+  function scanBadge(rootName) {
+    let files = 0, shownAt = 0;
+    el('scanNote').textContent = 'Scanning ' + rootName + '\u2026';
+    function show(folder) {
+      shownAt = Date.now();
+      el('mode').textContent = 'scanning\u2026 ' + files + (files === 1 ? ' file' : ' files') + ' \u00b7 ' + (folder || rootName);
+    }
+    return {
+      enter: show,
+      read(folder) { files++; if (Date.now() - shownAt >= 100) show(folder); }
+    };
   }
   async function fileToDataURI(f, name) {
     const ext = name.split('.').pop().toLowerCase();
@@ -5515,11 +5538,11 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     async set(k, v) { const d = await this.open(); const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); },
     async del(k) { const d = await this.open(); const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); }
   };
-  async function showFolder(h) {
+  async function showFolder(h, visible) {
     const mine = loading = { h: h };
     try {
       if ((await h.queryPermission({ mode: 'read' })) !== 'granted') return false;
-      const live = await loadLive(h);
+      const live = await loadLive(h, visible ? scanBadge(h.name) : null);
       if (loading !== mine || editing) return false;
       if (h === liveHandle && live.stamp === liveStamp) return true; // nothing changed: no redraw, so a folder you are browsing survives focus refreshes and live polls
       const sameFolder = h === liveHandle, scroll = sameFolder ? el('content').scrollTop : 0;
@@ -5527,13 +5550,16 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
       buildIndex(); renderTags(); setMode('live'); showPage(shownPage, sameFolder);
       el('content').scrollTop = scroll;
       return true;
-    } catch (e) { return false; } finally { if (loading === mine) loading = null; }
+    } catch (e) { return false; } finally {
+      if (loading === mine) loading = null;
+      if (visible) setMode(mode);
+    }
   }
   async function chooseFolder() {
     if (editing) return;
     try {
       const h = await showDirectoryPicker({ mode: 'readwrite' });
-      if (!(await showFolder(h))) return;
+      if (!(await showFolder(h, true))) return;
       closeNav();
       await IDB.set(dirKey, h);
     } catch (e) { /* cancelled or permission denied */ }
@@ -5546,10 +5572,10 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     buildIndex(); renderTags(); renderSidebar(); setMode('bundled');
     route(); // the live page on screen may not exist in the snapshot
   }
-  function refreshLive() {
+  function refreshLive(visible) {
     if (mode !== 'live' || editing || (loading && loading.h !== liveHandle)) return false;
     const now = Date.now(); if (now - lastRefresh < 1500) return false; lastRefresh = now;
-    return showFolder(liveHandle);
+    return showFolder(liveHandle, visible);
   }
   async function pollLive() {
     if (editing) { await checkEditedPage(); return; }
@@ -5732,7 +5758,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
 
   // ---------- init ----------
   async function init() {
-    el('refresh').addEventListener('click', refreshLive);
+    el('refresh').addEventListener('click', function () { refreshLive(true); });
     window.addEventListener('focus', function () { if (!loading) refreshLive(); }); // re-read live folder when the tab regains focus
     setInterval(pollLive, 5000);
     el('search').addEventListener('input', function (e) { doSearch(e.target.value); });
@@ -5837,7 +5863,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     el('allText').checked = showAllText;
     try {
       const h = await IDB.get(dirKey);
-      if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; } }
+      if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { applyLive(await loadLive(h, scanBadge(h.name))); liveHandle = h; mode = 'live'; } }
     } catch (e) {}
     el('mode').addEventListener('click', function () {
       const open = el('modeMenu').classList.toggle('hidden') === false;

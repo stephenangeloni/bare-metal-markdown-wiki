@@ -301,6 +301,9 @@ img { max-width: 100%; border-radius: 6px; }
   padding: 3px 10px;
   border-radius: 20px;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 button.mode { background: var(--bg); cursor: pointer; }
 button.mode::after { content: ' \25BE'; }
@@ -309,7 +312,8 @@ button.mode:disabled::after { content: none; }
 button.mode:hover:not(:disabled) { background: var(--hover); }
 .mode.live { color: var(--ok); border-color: currentColor; background: var(--ok-soft); }
 button.mode.live:hover { background: var(--ok-soft); filter: brightness(0.96); }
-.mode-wrap { position: relative; }
+.mode-wrap { position: relative; min-width: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .mode-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -400,7 +404,7 @@ button.mode.live:hover { background: var(--ok-soft); filter: brightness(0.96); }
 
 /* mode badge + live-render buttons travel together: app.js moves this
    whole group into the drawer on narrow screens */
-.modegrp { display: flex; align-items: center; gap: 8px; justify-self: end; }
+.modegrp { display: flex; align-items: center; gap: 8px; justify-self: end; min-width: 0; max-width: 100%; }
 
 /* ── 3. Layout & sidebar ─────────────────────────────────── */
 
@@ -778,7 +782,7 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
   .search-wrap { flex: 1 1 auto; }
   .search-kbd { display: none; }
   .brand { display: none; } /* name + brand icon give way to the mode group in the drawer */
-  .sidebar .modegrp { flex-wrap: wrap; margin: 0 4px 14px; }
+  .sidebar .modegrp { flex-wrap: wrap; margin: 0 4px 14px; max-width: calc(100% - 8px); }
   /* the sidebar becomes an off-canvas drawer over the article:
      slides in when body.nav-open, dimmed backdrop behind it */
   .sidebar {

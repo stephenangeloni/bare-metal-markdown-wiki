@@ -551,6 +551,7 @@
   // ---------- mode ----------
   function setMode(m) {
     const e = el('mode');
+    el('scanNote').textContent = '';
     e.textContent = m === 'live' ? ('live · ' + (liveHandle ? liveHandle.name : 'folder')) : 'bundled · data.js';
     e.className = 'mode' + (m === 'live' ? ' live' : '');
     el('refresh').classList.toggle('hidden', m !== 'live');
@@ -601,9 +602,9 @@
     RAW = (window.PAGES_BUNDLED || []).map(function (p) { return { slug: p.slug, mtime: p.mtime, src: b64toUtf8(p.content) }; });
     IMAGES = Object.create(null); TEXTRAW = [];
   }
-  async function loadLive(handle) {
+  async function loadLive(handle, scan) {
     const live = { stamp: stampHeader(), raw: [], images: Object.create(null), texts: [] };
-    await walkDir(handle, '', live);
+    await walkDir(handle, '', live, scan);
     return live;
   }
   function applyLive(live) { liveStamp = live.stamp; RAW = live.raw; IMAGES = live.images; TEXTRAW = live.texts; }
@@ -713,18 +714,35 @@
     if (bytes.indexOf(0) !== -1) return false;
     try { new TextDecoder('utf-8', { fatal: true }).decode(bytes, { stream: true }); return true; } catch (e) { return false; }
   }
-  async function walkDir(handle, prefix, live) { // same files and order as folderStamp, so the stamp comes from this one pass
+  async function walkDir(handle, prefix, live, scan) { // same files and order as folderStamp, so the stamp comes from this one pass
+    const folder = prefix.slice(0, -1);
+    if (scan) scan.enter(folder);
     for await (const e of handle.values()) {
       const path = prefix + e.name;
-      if (e.kind === 'directory') { await walkDir(e, path + '/', live); continue; }
+      if (e.kind === 'directory') { await walkDir(e, path + '/', live, scan); continue; }
       if (!watched(path)) continue;
       const f = await watchedFile(e, path);
       if (!f) continue;
       live.stamp += path + ':' + f.lastModified + '\n';
-      if (/\.md$/i.test(path)) { live.raw.push({ slug: path.replace(/\.md$/i, ''), path: path, mtime: Math.floor(f.lastModified / 1000), src: await f.text() }); continue; }
-      if (imgExtRe.test(path)) live.images[path] = await fileToDataURI(f, e.name);
-      if (listsAsText(path) && await looksLikeText(f)) live.texts.push({ path: path, mtime: Math.floor(f.lastModified / 1000) });
+      if (/\.md$/i.test(path)) live.raw.push({ slug: path.replace(/\.md$/i, ''), path: path, mtime: Math.floor(f.lastModified / 1000), src: await f.text() });
+      else {
+        if (imgExtRe.test(path)) live.images[path] = await fileToDataURI(f, e.name);
+        if (listsAsText(path) && await looksLikeText(f)) live.texts.push({ path: path, mtime: Math.floor(f.lastModified / 1000) });
+      }
+      if (scan) scan.read(folder);
     }
+  }
+  function scanBadge(rootName) {
+    let files = 0, shownAt = 0;
+    el('scanNote').textContent = 'Scanning ' + rootName + '\u2026';
+    function show(folder) {
+      shownAt = Date.now();
+      el('mode').textContent = 'scanning\u2026 ' + files + (files === 1 ? ' file' : ' files') + ' \u00b7 ' + (folder || rootName);
+    }
+    return {
+      enter: show,
+      read(folder) { files++; if (Date.now() - shownAt >= 100) show(folder); }
+    };
   }
   async function fileToDataURI(f, name) {
     const ext = name.split('.').pop().toLowerCase();
@@ -752,11 +770,11 @@
     async set(k, v) { const d = await this.open(); const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); },
     async del(k) { const d = await this.open(); const t = d.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); }
   };
-  async function showFolder(h) {
+  async function showFolder(h, visible) {
     const mine = loading = { h: h };
     try {
       if ((await h.queryPermission({ mode: 'read' })) !== 'granted') return false;
-      const live = await loadLive(h);
+      const live = await loadLive(h, visible ? scanBadge(h.name) : null);
       if (loading !== mine || editing) return false;
       if (h === liveHandle && live.stamp === liveStamp) return true; // nothing changed: no redraw, so a folder you are browsing survives focus refreshes and live polls
       const sameFolder = h === liveHandle, scroll = sameFolder ? el('content').scrollTop : 0;
@@ -764,13 +782,16 @@
       buildIndex(); renderTags(); setMode('live'); showPage(shownPage, sameFolder);
       el('content').scrollTop = scroll;
       return true;
-    } catch (e) { return false; } finally { if (loading === mine) loading = null; }
+    } catch (e) { return false; } finally {
+      if (loading === mine) loading = null;
+      if (visible) setMode(mode);
+    }
   }
   async function chooseFolder() {
     if (editing) return;
     try {
       const h = await showDirectoryPicker({ mode: 'readwrite' });
-      if (!(await showFolder(h))) return;
+      if (!(await showFolder(h, true))) return;
       closeNav();
       await IDB.set(dirKey, h);
     } catch (e) { /* cancelled or permission denied */ }
@@ -783,10 +804,10 @@
     buildIndex(); renderTags(); renderSidebar(); setMode('bundled');
     route(); // the live page on screen may not exist in the snapshot
   }
-  function refreshLive() {
+  function refreshLive(visible) {
     if (mode !== 'live' || editing || (loading && loading.h !== liveHandle)) return false;
     const now = Date.now(); if (now - lastRefresh < 1500) return false; lastRefresh = now;
-    return showFolder(liveHandle);
+    return showFolder(liveHandle, visible);
   }
   async function pollLive() {
     if (editing) { await checkEditedPage(); return; }
@@ -969,7 +990,7 @@
 
   // ---------- init ----------
   async function init() {
-    el('refresh').addEventListener('click', refreshLive);
+    el('refresh').addEventListener('click', function () { refreshLive(true); });
     window.addEventListener('focus', function () { if (!loading) refreshLive(); }); // re-read live folder when the tab regains focus
     setInterval(pollLive, 5000);
     el('search').addEventListener('input', function (e) { doSearch(e.target.value); });
@@ -1074,7 +1095,7 @@
     el('allText').checked = showAllText;
     try {
       const h = await IDB.get(dirKey);
-      if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; } }
+      if (h) { const perm = await h.queryPermission({ mode: 'read' }); if (perm === 'granted') { applyLive(await loadLive(h, scanBadge(h.name))); liveHandle = h; mode = 'live'; } }
     } catch (e) {}
     el('mode').addEventListener('click', function () {
       const open = el('modeMenu').classList.toggle('hidden') === false;
