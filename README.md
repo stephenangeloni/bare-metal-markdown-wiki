@@ -213,13 +213,25 @@ is `.EasyMDEContainer .CodeMirror`, the toolbar `.editor-toolbar`).
 
 ## Single-file version
 
-Each GitHub release has an `index-all.html` attached: `index.html` with
-`app.js`, `style.css`, `config.js`, `user.css` and everything in `vendor/`
-(KaTeX fonts included) inlined. It needs only `data.js` next to it, so put it
-beside `articles/` and the build script, run the build, and open it. It carries
-the repository's default `config.js` and `user.css`, so your own copies of those
-two files have no effect on it; use `index.html` if you change them. To make it
-yourself, run `node bundle.js`.
+`index-all.html` is `index.html` with `app.js`, `style.css`, `config.js`,
+`user.css` and everything in `vendor/` (KaTeX fonts included) inlined. It needs
+only `data.js` next to it, so put it beside `articles/` and the build script,
+run the build, and open it. It carries the repository's `config.js` and
+`user.css` as committed, so local edits to those two files have no effect on it
+until you commit them.
+
+It is committed, and kept in step by a pre-commit hook. Turn the hook on once
+per clone (it needs Node.js):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+Each commit then rebuilds `index-all.html` from the staged files and adds it
+to the commit. A merge where both sides changed it stops with a conflict on
+`index-all.html`; run `git add index-all.html` and `git commit`, and the hook
+rebuilds it from the merged files. CI fails any push to `main` or pull request
+whose `index-all.html` is out of date.
 
 ## Markdown conventions
 
@@ -349,8 +361,11 @@ articles/         the knowledge base (sample pages included)
 vendor/           markdown-it, mdit-extras, highlight.js, KaTeX (+fonts), mermaid, EasyMDE
 test-render.js    smoke test: node test-render.js (run after upgrading vendor/)
 test-app.js       smoke test: node test-app.js (link/footnote source passes)
-bundle.js         CI: writes index-all.html (everything inlined except data.js)
+index-all.html    generated: index.html with everything but data.js inlined
+bundle.js         writes index-all.html (node bundle.js)
+.githooks/        pre-commit hook that keeps index-all.html in step
 test-bundle.js    smoke test: node test-bundle.js (bundle.js output)
+test-hook.js      smoke test: node test-hook.js (pre-commit hook)
 ```
 
 ## Limitations

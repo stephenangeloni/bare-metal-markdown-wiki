@@ -1,0 +1,17 @@
+#!/bin/sh
+set -eu
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node not found, so index-all.html was not rebuilt. CI fails if it is out of date." >&2
+  exit 0
+fi
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+git checkout-index -a --prefix="$tmp/"
+node "$tmp/bundle.js" "$tmp/index-all.html" >/dev/null
+built=$(git hash-object -w "$tmp/index-all.html")
+staged=$(git rev-parse -q --verify :index-all.html || true)
+if [ "$built" != "$staged" ]; then
+  git update-index --add --cacheinfo "100644,$built,index-all.html"
+  cp "$tmp/index-all.html" index-all.html
+  echo "pre-commit: rebuilt index-all.html and added it to this commit"
+fi
