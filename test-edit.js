@@ -73,6 +73,18 @@ test('merges into an empty page and from an empty page', function () {
   eq(merged(api.merge3('x\n', 'x\n', '')), '', 'they emptied the page');
 });
 
+test('lines we both changed the same way stay out of the clash', function () {
+  eq(merged(api.merge3('Old title\nold body\n', 'New title\nmine\n', 'New title\ntheirs\n')), 'New title\n<theirs\n|mine\n>', 'merged text');
+});
+
+test('both adding a line to a page with no final newline clashes only on the added lines', function () {
+  eq(merged(api.merge3('l1\nl2\nl3\nl4\nl5', 'l1\nl2\nl3\nl4\nl5\nmine', 'l1\nl2\nl3\nl4\nl5\nl6')), 'l1\nl2\nl3\nl4\nl5\n<l6|mine>', 'merged text');
+});
+
+test('an edit at the top merges with their line added to a page with no final newline', function () {
+  eq(merged(api.merge3('l1\nl2\nl3\nl4\nl5', 'L1\nl2\nl3\nl4\nl5', 'l1\nl2\nl3\nl4\nl5\nl6')), 'L1\nl2\nl3\nl4\nl5\nl6', 'merged text');
+});
+
 test('saves an edit into a subfolder file', async function () {
   const tree = { Guides: { 'Basics.md': page('old') } };
   const root = fakeFolder(tree);

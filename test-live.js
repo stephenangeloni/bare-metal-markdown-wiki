@@ -219,6 +219,59 @@ test('a Windows line-ending page keeps them through a merge and through a clash'
   if (bad.length) throw new Error(bad.join('\n  '));
 });
 
+test('a re-save that only changes line endings raises no warning, and Save keeps the new endings', async function () {
+  const tree = { 'Home.md': page('a\r\nb\r\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a\nb mine\n';
+  tree['Home.md'] = page('a\nb\n'); await w.app.pollLive();
+  const bad = [];
+  check(bad, w.alert() === '', 'warning: ' + w.alert());
+  await w.app.saveEditor();
+  check(bad, textOf(tree['Home.md']) === 'a\nb mine\n', 'file on disk: ' + JSON.stringify(textOf(tree['Home.md'])));
+  if (bad.length) throw new Error(bad.join('\n  '));
+});
+
+test('a warning clears when they put the page back as it was', async function () {
+  const tree = { 'Home.md': page('v1\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor();
+  tree['Home.md'] = page('v2\n'); await w.app.pollLive();
+  tree['Home.md'] = page('v1\n'); await w.app.pollLive();
+  if (w.alert() !== '') throw new Error('warning after the revert: ' + w.alert());
+});
+
+test('a slow check that finishes after their save was merged raises no warning', async function () {
+  const tree = { 'Home.md': page('a\nb\nc\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a mine\nb\nc\n';
+  tree['Home.md'] = page('a\nb\nc theirs\n');
+  f.ctl.hold.add('Home.md'); const slow = w.app.pollLive(); await settle(); f.ctl.hold.delete('Home.md');
+  await w.app.pollLive(); w.app.mergeIncoming();
+  f.releaseAll(); await slow; await settle();
+  if (w.alert() !== '') throw new Error('warning for the version already merged: ' + w.alert());
+});
+
+test('Keep both adds only the lines that differ, not the ones we both wrote', async function () {
+  const tree = { 'Home.md': page('Old title\nold body\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'New title\nmine\n';
+  tree['Home.md'] = page('New title\ntheirs\n'); await w.app.pollLive(); w.app.mergeIncoming();
+  w.app.pickConflict(Number(/data-k="(\d+)"/.exec(w.conflicts())[1]), 'both');
+  if (w.editor().value !== 'New title\ntheirs\nmine\n') throw new Error('draft: ' + JSON.stringify(w.editor().value));
+});
+
+test('markup in their text is shown as text in both previews', async function () {
+  const tree = { 'Home.md': page('a\nb\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a\nb <i>mine</i>\n';
+  tree['Home.md'] = page('a\nb <img src=x> & co\n'); await w.app.pollLive();
+  w.app.showChanges(); const changes = w.alert(); w.app.mergeIncoming();
+  const bad = [];
+  check(bad, !/<img|<i>/.test(changes) && /&amp; co/.test(changes), 'what changed: ' + changes);
+  check(bad, !/<img|<i>/.test(w.conflicts()) && /&amp; co/.test(w.conflicts()), 'conflicts: ' + w.conflicts());
+  if (bad.length) throw new Error(bad.join('\n  '));
+});
+
 test('show what changed lists the lines they removed and added', async function () {
   const tree = { 'Home.md': page('a\nb\nc\n') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
@@ -415,6 +468,22 @@ test('a folder switch that fails to load does not redirect saves to the new fold
   check(bad, textOf(treeB['Home.md']) === 'B home', 'B/Home.md on disk is now ' + JSON.stringify(textOf(treeB['Home.md'])));
   if (bad.length) throw new Error(bad.join('\n  '));
 });
+
+for (const viaBanner of [false, true]) {
+  test('a colleague re-saving the page as non-UTF-8 is never overwritten' + (viaBanner ? ' (banner, Merge, then Save)' : ' (Save)'), async function () {
+    const tree = { 'Home.md': page('title\n\ncafe\n') }; const f = fakeFolder('A', tree);
+    const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+    await w.app.openEditor(); w.editor().value = 'my title\n\ncafe\n';
+    tree['Home.md'] = page(Buffer.from('title\n\ncaf\xE9\n', 'latin1'));
+    if (viaBanner) { await w.app.pollLive(); w.app.mergeIncoming(); }
+    await w.app.saveEditor();
+    const bad = [];
+    check(bad, tree['Home.md'].bytes.includes(0xE9), 'their byte was replaced: ' + tree['Home.md'].bytes.toString('hex'));
+    check(bad, w.app.editing && w.editor(), 'the editor closed');
+    check(bad, /UTF-8/.test(w.msg() || ''), 'message: ' + w.msg());
+    if (bad.length) throw new Error(bad.join('\n  '));
+  });
+}
 
 test('saving a page that is not UTF-8 does not destroy the characters it could not decode', async function () {
   const legacy = Buffer.from([0x63, 0x61, 0x66, 0xE9, 0x0A]);

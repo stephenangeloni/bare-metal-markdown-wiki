@@ -545,6 +545,7 @@
     const handle = await fileAt(root, path);
     const current = await handle.getFile();
     const raw = await current.text();
+    if (raw.indexOf('\uFFFD') !== -1) throw new Error('someone saved this page in a format other than UTF-8 text, so saving here would damage its special characters. Your text is still in the box; convert the file to UTF-8 in a text editor, then save again.');
     if (current.lastModified !== version.modified || raw !== version.raw) {
       const theirs = versionOf(current.lastModified, raw);
       const parts = merge3(version.text, text, theirs.text);
@@ -589,7 +590,16 @@
       const was = b.slice(i, next).join(''), mineText = my.slice(m, mEnd).join(''), theirText = th.slice(t, tEnd).join('');
       if (mineText === was || mineText === theirText) push(theirText, mineText);
       else if (theirText === was) push(mineText, mineText);
-      else parts.push({ conflict: true, mine: mineText, theirs: theirText });
+      else {
+        const myPart = my.slice(m, mEnd), thPart = th.slice(t, tEnd);
+        let lead = 0, trail = 0;
+        while (lead < myPart.length && lead < thPart.length && myPart[lead] === thPart[lead]) lead++;
+        while (trail < myPart.length - lead && trail < thPart.length - lead && myPart[myPart.length - 1 - trail] === thPart[thPart.length - 1 - trail]) trail++;
+        const agreed = function (lines) { const text = lines.join(''); if (text) push(text, text); };
+        agreed(myPart.slice(0, lead));
+        parts.push({ conflict: true, mine: myPart.slice(lead, myPart.length - trail).join(''), theirs: thPart.slice(lead, thPart.length - trail).join('') });
+        agreed(myPart.slice(myPart.length - trail));
+      }
       i = next; m = mEnd; t = tEnd;
     }
     return parts;
@@ -726,8 +736,10 @@
     try { f = await (await fileAt(ed.root, ed.path)).getFile(); if (f.lastModified === known.modified) return; raw = await f.text(); }
     catch (e) { return; }
     if (editing !== ed || ed.saving || ed.conflict) return;
-    if (raw === known.raw) { known.modified = f.lastModified; return; }
-    ed.incoming = versionOf(f.lastModified, raw);
+    const now = versionOf(f.lastModified, raw);
+    if (now.text === ed.version.text) { ed.version = now; ed.incoming = null; el('editAlert').innerHTML = ''; return; }
+    if (ed.incoming && raw === ed.incoming.raw) { ed.incoming.modified = f.lastModified; return; }
+    ed.incoming = now;
     el('editAlert').innerHTML = 'Someone else saved this page while you were editing.' +
       ' <button class="btn" type="button" data-edit="merge">Merge their changes into mine</button>' +
       ' <button class="btn" type="button" data-edit="changes">Show what changed</button>';
