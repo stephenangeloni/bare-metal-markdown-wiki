@@ -774,7 +774,7 @@
     if (buildReminder !== ed.root) {
       buildReminder = ed.root;
       const n = el('editNote'); // the page re-rendered with a fresh notice slot: use it for the build reminder
-      if (n) { n.classList.add('edit-note--info'); n.textContent = 'Saved. Re-run the build (build.sh, or build.bat on Windows) to refresh the bundled snapshot, so wikis opened without live render see this edit.'; }
+      if (n) { n.classList.add('edit-note--info'); n.textContent = 'Saved. Re-run the build (build.sh, or build.bat / build.ps1 on Windows) to refresh the bundled snapshot, so wikis opened without live render see this edit.'; }
     }
   }
   async function checkEditedPage() {

@@ -65,6 +65,7 @@ A small sample knowledge base in `articles/` demonstrates every feature.
    ```bash
    ./build.sh          # Linux/macOS — pure bash, offline
    build.bat           # Windows — double-click, offline
+   ./build.ps1         # PowerShell (Windows, or pwsh anywhere) — offline
    ```
 
 3. Reopen `index.html` (or just refresh — the snapshot is read at load)
@@ -205,10 +206,11 @@ version adds settings.
 
 `config.js`, `user.css` and `articles/` are yours; everything else is the app.
 Drop the new version on top of the folder (index.html, style.css, app.js,
-build.sh/bat, vendor/), keep those three, then re-run the build. Style tweaks
+build.sh/bat/ps1, vendor/), keep those three, then re-run the build. Style tweaks
 go in `user.css`, which loads after `style.css` — override the `--bg`/`--accent`
 etc. variables or any selector there instead of editing `style.css` (the edit box
-is `.EasyMDEContainer .CodeMirror`, the toolbar `.editor-toolbar`).
+is `.EasyMDEContainer .CodeMirror`, the toolbar `.editor-toolbar`). If you do
+edit `style.css`, re-run the build: the page uses the copy inlined into `index.html`.
 
 ## Markdown conventions
 
@@ -326,13 +328,14 @@ folder ──File System Access API──────┘
 
 ```
 index.html        the frame (layout + UI chrome, no logic)
-style.css         styling
+style.css         styling source — the build inlines it, minified, into index.html
 user.css          your style tweaks (loaded after style.css) — survives upgrades
 config.js         your settings — survives upgrades
 app.js            all logic: loaders, renderer, search, navigation
 data.js           generated snapshot of articles/ (rebuild, don't edit)
 build.sh          offline rebuild — bash
-build.bat         offline rebuild — Windows
+build.bat         offline rebuild — Windows (runs build.ps1)
+build.ps1         offline rebuild — PowerShell
 articles/         the knowledge base (sample pages included)
 vendor/           markdown-it, mdit-extras, highlight.js, KaTeX (+fonts), mermaid, EasyMDE
 test-render.js    smoke test: node test-render.js (run after upgrading vendor/)
