@@ -32,6 +32,7 @@ const cases = [
   ['footnote def not eaten in fence','```\n[^a]: def\n```\n',                           'code>[^a]: def', '!class="footnotes"'],
   ['footnote ref in fence kept',    '```\n[^a]\n```',                                   '[^a]'],
   ['footnote span outside code',    'see `[^a]` ok',                                   '[^a]', '!<sup id="fnref-'],
+  ['footnote named after a built-in','x.[^constructor]\n\n[^constructor]: def',       '<sup id="fnref-1">', '<li id="fn-1">def <a'],
 ];
 (async function () {
 let bad = 0;
@@ -130,16 +131,18 @@ const sidebarCases = [
   ['by type keeps extension order when folders mix in alphabetically', 'type', { order: 'alpha' }, '[Guides] | data.csv | Advanced.md | Basics.md | notes.txt | top.js | Home.md'],
   ['type falls back to title in bundled mode', 'type-grouped', { textOff: true, mode: 'bundled' }, 'Welcome | [Guides] | Basics guide | Zeta'],
 ];
-const alphaFactory = function (slugs) {
+const alphaFactory = function (slugs, order) {
   const pages = {}; slugs.forEach(function (sl) { const cut = sl.lastIndexOf('/'); pages[sl] = { slug: sl, folder: cut < 0 ? '' : sl.slice(0, cut), title: sl.slice(cut + 1), tags: [] }; });
-  const html = sidebarFactory({ pages: pages, files: {}, mode: 'bundled', showAllText: false, sort: 'title', order: 'alpha' });
+  const html = sidebarFactory({ pages: pages, files: {}, mode: 'bundled', showAllText: false, sort: 'title', order: order || 'alpha' });
   const items = []; const re = /data-slug="[^"]+">([^<]*)<|<summary>([^<]*)</g; let m;
   while ((m = re.exec(html))) items.push(m[2] !== undefined ? '[' + m[2] + ']' : m[1]);
   return items.join(' | ');
 };
 sidebarCases.push(['alpha stays alphabetical when folder names differ in case', null, null, '[archive] | y | beta | yak | [Zeta] | x']);
+sidebarCases.push(['folders first sorts folder names ignoring case', null, 'folders', '[archive] | y | [Zeta] | x | beta | yak']);
+sidebarCases.push(['files first sorts folder names ignoring case', null, 'files', 'beta | yak | [archive] | y | [Zeta] | x']);
 for (const [name, sort, opts, want] of sidebarCases) {
-  const got = sort === null ? alphaFactory(['beta', 'yak', 'Zeta/x', 'archive/y']) : sidebarFor(sort, opts);
+  const got = sort === null ? alphaFactory(['beta', 'yak', 'Zeta/x', 'archive/y'], opts) : sidebarFor(sort, opts);
   if (got !== want) { bad++; console.log('FAIL: sidebar ' + name + ':\n  got  ' + got + '\n  want ' + want); }
 }
 const searchFactory = (0, eval)('(function (env) {\n' +
@@ -170,7 +173,37 @@ for (const [name, folder, want] of searchCases) {
   const got = await searchIn(folder, 'needle');
   if (got !== want) { bad++; console.log('FAIL: search ' + name + ': got ' + got + ', want ' + want); }
 }
-const total = searchCases.length + sidebarCases.length + themeCases.length + schemeCases.length + cases.length + pathCases.length + extCases.length + markCases.length + keyCases.length;
+const builtinWiki = (0, eval)('(function (window) {\n' +
+  'let RAW, TEXTRAW, IMAGES, PAGES, STEM, FILES, folderTexts, mode = "bundled", showAllText = false, sidebarSort = "title", activeTag = "", treeOpen = null, shownPage = "", landingPage = "", foldersOpen = false, sidebarOrder = "files";\n' +
+  'const els = {}; function el(id) { return els[id] = els[id] || { innerHTML: "", classList: { add() {} } }; } function markActive() {} function placeToc() {}\n' +
+  ['b64toUtf8', 'loadBundled', 'escapeHtml', 'titleOf', 'parseFrontmatter', 'normalizeParts', 'resolveSlug', 'absPath', 'resolveMdPath', 'buildIndex', 'WIKI_LINK_RE', 'outLinks', 'outsideCode', 'wikiLinks',
+   'fixMdLinks', 'taggedSlugs', 'sidebarOrderSpecs', 'offeredOrders', 'shownOrder', 'renderSidebar', 'renderHome', 'renderTags'].map(grab).join('\n') +
+  '\nloadBundled(); buildIndex(); renderSidebar(); renderHome(); renderTags();\n' +
+  'const img = { src: "", getAttribute() { return "constructor"; } }; fixMdLinks({ querySelectorAll(s) { return s === "img[src]" ? [img] : []; } }, "");\n' +
+  'return { tree: els.tree.innerHTML, home: els.page.innerHTML, tags: els.tags.innerHTML, link: wikiLinks("[[toString]] [[valueOf]]"), img: img.src, unknown: [titleOf("hasOwnProperty"), resolveSlug("__proto__"), resolveMdPath("isPrototypeOf.md", "")] }; })');
+const builtins = (function () {
+  const raw = [
+    { slug: 'constructor', mtime: 1, src: '---\ntags: constructor, __proto__\n---\n# Ctor page' },
+    { slug: 'constructor/notes', mtime: 2, src: '# Notes' },
+    { slug: '__proto__/toString', mtime: 3, src: '# Proto string' }
+  ];
+  const bundled = raw.map(function (p) { return { slug: p.slug, mtime: p.mtime, content: Buffer.from(p.src).toString('base64') }; });
+  try { return builtinWiki({ PAGES_BUNDLED: bundled }); } catch (e) { return { error: e.message }; }
+})();
+const builtinCases = [
+  ['index and sidebar build from built-in names', builtins.error, undefined],
+  ['sidebar lists each built-in folder once', builtins.tree && builtins.tree.match(/<summary>[^<]*</g).join(' '), '<summary>__proto__< <summary>constructor<'],
+  ['sidebar holds every page', builtins.tree && (builtins.tree.match(/data-slug="[^"]+"/g) || []).sort().join(' '), 'data-slug="__proto__/toString" data-slug="constructor" data-slug="constructor/notes"'],
+  ['home groups pages under built-in folder names', builtins.home && (builtins.home.match(/home-folder">[^<]*/g) || []).join(' '), 'home-folder">(root) home-folder">__proto__ home-folder">constructor'],
+  ['tags named after built-ins', builtins.tags && (builtins.tags.match(/data-tag="[^"]+"/g) || []).join(' '), 'data-tag="constructor" data-tag="__proto__"'],
+  ['wiki link to a built-in stem', builtins.link, '[toString](#__proto__%2FtoString) <span class="broken-wiki">[valueOf]</span>'],
+  ['image named after a built-in', builtins.img, 'articles/constructor'],
+  ['missing built-in slugs stay missing', JSON.stringify(builtins.unknown), '["hasOwnProperty",null,null]']
+];
+for (const [name, got, want] of builtinCases) {
+  if (got !== want) { bad++; console.log('FAIL: built-in names: ' + name + ':\n  got  ' + got + '\n  want ' + want); }
+}
+const total = builtinCases.length + searchCases.length + sidebarCases.length + themeCases.length + schemeCases.length + cases.length + pathCases.length + extCases.length + markCases.length + keyCases.length;
 if (bad) { console.log(bad + ' failed'); process.exit(1); }
 console.log('test-app: ' + total + '/' + total + ' passed');
 })();

@@ -4804,11 +4804,11 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
   // ---------- state ----------
   const WIKI = window.WIKI || {}; // settings live in config.js; every key has a built-in default
   let RAW = [];                 // [{slug, mtime, content}]
-  let PAGES = {};               // slug -> {slug,title,folder,tags,mtime,content,links}
-  let IMAGES = {};              // "folder/file.png" (KB-root-relative) -> data URI
+  let PAGES = Object.create(null);             // slug -> {slug,title,folder,tags,mtime,content,links}
+  let IMAGES = Object.create(null);            // "folder/file.png" (KB-root-relative) -> data URI
   let TEXTRAW = [];
-  let FILES = {};
-  let STEM = {};                // lowercased filename stem -> [slugs]
+  let FILES = Object.create(null);
+  let STEM = Object.create(null);              // lowercased filename stem -> [slugs]
   let mode = 'bundled';
   let showAllText = false;
   let folderTexts = { folder: null, items: [] };
@@ -4891,7 +4891,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
 
   // ---------- index ----------
   function buildIndex() {
-    PAGES = {}; STEM = {};
+    PAGES = Object.create(null); STEM = Object.create(null);
     RAW.forEach(function (p) {
       const fm = parseFrontmatter(p.src);
       const folder = p.slug.indexOf('/') !== -1 ? p.slug.slice(0, p.slug.lastIndexOf('/')) : '';
@@ -4907,7 +4907,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
       (STEM[stemFile.toLowerCase()] = STEM[stemFile.toLowerCase()] || []).push(p.slug);
     });
     for (const slug in PAGES) PAGES[slug].links = outLinks(PAGES[slug]);
-    FILES = {}; folderTexts = { folder: null, items: [] };
+    FILES = Object.create(null); folderTexts = { folder: null, items: [] };
     TEXTRAW.forEach(function (t) {
       const cut = t.path.lastIndexOf('/'), name = t.path.slice(cut + 1), dot = name.lastIndexOf('.');
       FILES['/' + t.path] = { key: '/' + t.path, path: t.path, folder: cut < 0 ? '' : t.path.slice(0, cut), name: name, title: name, ext: dot > 0 ? name.slice(dot + 1).toLowerCase() : '', mtime: t.mtime };
@@ -4953,7 +4953,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     });
   }
   function withFootnotes(src) {
-    const lines = src.split('\n'); const body = []; const defs = {}; let inFence = false;
+    const lines = src.split('\n'); const body = []; const defs = Object.create(null); let inFence = false;
     for (let i = 0; i < lines.length; i++) {
       if (/^[ \t]{0,3}(?:```|~~~)/.test(lines[i])) { inFence = !inFence; body.push(lines[i]); continue; } // fences pass through untouched
       if (inFence) { body.push(lines[i]); continue; }
@@ -4966,7 +4966,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
         body.push('');
       } else body.push(lines[i]);
     }
-    const num = {}; const used = [];
+    const num = Object.create(null); const used = [];
     const nbody = outsideCode(body.join('\n'), function (b) { return b.replace(/\[\^([^\]]+)\]/g, function (mm, id) {
       id = id.trim();
       if (!(id in num)) { num[id] = used.length + 1; used.push(id); }
@@ -5154,7 +5154,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     const page = el('page'); tocHtml = ''; el('backlinks').innerHTML = ''; placeToc();
     page.classList.add('home');
     const slugs = taggedSlugs();
-    const byFolder = {};
+    const byFolder = Object.create(null);
     slugs.forEach(function (s) { const f = PAGES[s].folder || '(root)'; (byFolder[f] = byFolder[f] || []).push(s); });
     if (!Object.keys(PAGES).length) {
       page.innerHTML = '<h1>Home</h1><p class="meta">No pages yet. Add <code>.md</code> files to <code>articles/</code> and run the build, or use <b>Live render</b>.</p>';
@@ -5199,10 +5199,10 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     const spec = sidebarOrderSpecs()[shownOrder()], groupOf = spec.groupOf, label = spec.label;
     const entries = taggedSlugs().map(function (s) { return { key: s, folder: PAGES[s].folder, name: s.split('/').pop() + '.md', title: PAGES[s].title, ext: 'md' }; })
       .concat(activeTag ? [] : Object.keys(FILES).map(function (p) { return FILES[p]; }));
-    const root = { entries: [], subs: {} }; // nested tree: folder -> its entries + subfolders
+    const root = { entries: [], subs: Object.create(null) }; // nested tree: folder -> its entries + subfolders
     entries.forEach(function (e) {
       let node = root;
-      groupOf(e).forEach(function (part) { node.subs[part] = node.subs[part] || { entries: [], subs: {} }; node = node.subs[part]; });
+      groupOf(e).forEach(function (part) { node.subs[part] = node.subs[part] || { entries: [], subs: Object.create(null) }; node = node.subs[part]; });
       node.entries.push(e);
     });
     // a folder keeps whatever the user last set by hand; else it is open when it contains the
@@ -5218,14 +5218,13 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
       return '<a href="#' + encodeURIComponent(e.key) + '" data-slug="' + escapeHtml(e.key) + '">' + escapeHtml(label(e)) + '</a>';
     };
     const orderedItems = function (node, path) { // [display name, html] pairs, per sidebarOrder
-      const folderItems = Object.keys(node.subs).sort().map(function (sub) { return [sub, renderNode(sub, node.subs[sub], path)]; });
+      const folderItems = Object.keys(node.subs).sort(function (a, b) { return a.localeCompare(b); }).map(function (sub) { return [sub, renderNode(sub, node.subs[sub], path)]; });
       let list = node.entries.slice().sort(spec.compare).map(function (e) { return [label(e), linkHtml(e)]; });
       if (sidebarOrder === 'folders') list = folderItems.concat(list);
       else if (sidebarOrder === 'alpha') {
-        const folders = folderItems.slice().sort(function (a, b) { return a[0].localeCompare(b[0]); });
         const merged = []; let next = 0;
-        list.forEach(function (item) { while (next < folders.length && folders[next][0].localeCompare(item[0]) < 0) merged.push(folders[next++]); merged.push(item); });
-        list = merged.concat(folders.slice(next));
+        list.forEach(function (item) { while (next < folderItems.length && folderItems[next][0].localeCompare(item[0]) < 0) merged.push(folderItems[next++]); merged.push(item); });
+        list = merged.concat(folderItems.slice(next));
       }
       else list = list.concat(folderItems); // 'files': files first, then folders
       return list;
@@ -5261,7 +5260,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
   }
   function renderTags() {
     const box = el('tags');
-    const tags = {};
+    const tags = Object.create(null);
     Object.keys(PAGES).forEach(function (s) { PAGES[s].tags.forEach(function (t) { (tags[t] = tags[t] || []).push(s); }); });
     const names = Object.keys(tags);
     if (!names.length) { box.innerHTML = ''; return; }
@@ -5363,10 +5362,10 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
   // ---------- loaders ----------
   function loadBundled() {
     RAW = (window.PAGES_BUNDLED || []).map(function (p) { return { slug: p.slug, mtime: p.mtime, src: b64toUtf8(p.content) }; });
-    IMAGES = {}; TEXTRAW = [];
+    IMAGES = Object.create(null); TEXTRAW = [];
   }
   async function loadLive(handle) {
-    const live = { stamp: stampHeader(), raw: [], images: {}, texts: [] };
+    const live = { stamp: stampHeader(), raw: [], images: Object.create(null), texts: [] };
     await walkDir(handle, '', live);
     return live;
   }
@@ -5862,7 +5861,7 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
     });
     el('tree').addEventListener('toggle', function (e) { // capture phase: the toggle event does not bubble. remembers hand-opened folders across redraws
       const p = e.target.getAttribute('data-path');
-      if (p) { treeOpen = treeOpen || {}; treeOpen[p] = e.target.open; }
+      if (p) { treeOpen = treeOpen || Object.create(null); treeOpen[p] = e.target.open; }
     }, true);
     if (mode !== 'live') loadBundled();
 

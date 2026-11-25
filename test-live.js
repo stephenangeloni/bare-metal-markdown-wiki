@@ -1443,6 +1443,17 @@ t('a multibyte character cut at the size limit does not show as a replacement ch
   return bad;
 });
 
+t('a page and a folder named after built-in object properties open, and other such names are not found', async function () {
+  const tree = { 'constructor.md': page('ctor'), constructor: { 'notes.md': page('inside') }, 'notes.txt': page('n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#constructor', showAllText: true }); await w.app.start(f.root); await settle();
+  const bad = [];
+  check(bad, w.screen().startsWith('PAGE constructor |'), 'constructor.md: ' + w.screen());
+  w.go('#constructor%2Fnotes'); await settle();
+  check(bad, w.screen().startsWith('PAGE constructor/notes |'), 'constructor/notes.md: ' + w.screen());
+  for (const name of ['toString', 'hasOwnProperty', '__proto__', '/constructor']) { w.go('#' + encodeURIComponent(name)); await settle(); check(bad, w.screen().startsWith('NOTFOUND ' + name), name + ': ' + w.screen()); }
+  return bad;
+});
+
 (async function () {
   let bad = 0;
   for (const [name, fn] of tests) {
