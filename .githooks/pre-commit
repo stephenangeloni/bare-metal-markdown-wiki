@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+if ! command -v node >/dev/null 2>&1; then
+  echo "pre-commit: node not found, so index-all.html was not rebuilt. CI fails if it is out of date." >&2
+  exit 0
+fi
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/index-all-pre-commit.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+trap 'exit 1' HUP INT TERM
+git checkout-index -a --prefix="$tmp/"
+node "$tmp/bundle.js" "$tmp/index-all.html" >/dev/null
+built=$(git hash-object -w "$tmp/index-all.html")
+staged=$(git rev-parse -q --verify :index-all.html || true)
+[ "$built" = "$staged" ] && exit 0
+gitdir=$(git rev-parse --absolute-git-dir)
+if [ -n "${GIT_INDEX_FILE-}" ] && ! [ "$GIT_INDEX_FILE" -ef "$gitdir/index" ] && ! [ "$GIT_INDEX_FILE" -ef "$gitdir/index.lock" ]; then
+  echo "pre-commit: this commit changes index-all.html, and a commit of named paths cannot also update it in your staged files. Stage the changes with git add, then run git commit without paths." >&2
+  exit 1
+fi
+git update-index --add --cacheinfo "100644,$built,index-all.html"
+cp "$tmp/index-all.html" index-all.html
+echo "pre-commit: rebuilt index-all.html and added it to this commit"
