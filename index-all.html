@@ -5218,14 +5218,13 @@ Expecting `+Ze.join(", ")+", got '"+(this.terminals_[Ne]||Ne)+"'":Dt="Parse erro
       return '<a href="#' + encodeURIComponent(e.key) + '" data-slug="' + escapeHtml(e.key) + '">' + escapeHtml(label(e)) + '</a>';
     };
     const orderedItems = function (node, path) { // [display name, html] pairs, per sidebarOrder
-      const folderItems = Object.keys(node.subs).sort().map(function (sub) { return [sub, renderNode(sub, node.subs[sub], path)]; });
+      const folderItems = Object.keys(node.subs).sort(function (a, b) { return a.localeCompare(b); }).map(function (sub) { return [sub, renderNode(sub, node.subs[sub], path)]; });
       let list = node.entries.slice().sort(spec.compare).map(function (e) { return [label(e), linkHtml(e)]; });
       if (sidebarOrder === 'folders') list = folderItems.concat(list);
       else if (sidebarOrder === 'alpha') {
-        const folders = folderItems.slice().sort(function (a, b) { return a[0].localeCompare(b[0]); });
         const merged = []; let next = 0;
-        list.forEach(function (item) { while (next < folders.length && folders[next][0].localeCompare(item[0]) < 0) merged.push(folders[next++]); merged.push(item); });
-        list = merged.concat(folders.slice(next));
+        list.forEach(function (item) { while (next < folderItems.length && folderItems[next][0].localeCompare(item[0]) < 0) merged.push(folderItems[next++]); merged.push(item); });
+        list = merged.concat(folderItems.slice(next));
       }
       else list = list.concat(folderItems); // 'files': files first, then folders
       return list;
