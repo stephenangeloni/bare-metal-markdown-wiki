@@ -802,3 +802,12 @@ details.fold > *:not(summary):last-child { margin-bottom: 14px; }
 .editor textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .editor-bar { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
 .edit-msg { font-size: 13px; color: var(--muted); }
+.edit-alert, .edit-conflicts { margin-bottom: 12px; padding: 12px 14px; font-size: 13px; border: 1px solid var(--warn); border-radius: var(--radius); }
+.edit-alert:empty, .edit-conflicts:empty { display: none; }
+.edit-alert .btn, .conflict-bar .btn { height: 28px; padding: 0 12px; font-size: 12.5px; text-transform: none; letter-spacing: normal; }
+.edit-alert pre, .conflict pre { margin: 8px 0 0; padding: 8px 10px; max-height: 40vh; overflow: auto; font: 12.5px/1.5 var(--mono); background: var(--code-bg); border-radius: 6px; white-space: pre-wrap; }
+.edit-conflicts > p { margin: 0 0 8px; }
+.conflict { padding-top: 10px; border-top: 1px solid var(--border); }
+.conflict + .conflict { margin-top: 10px; }
+.conflict-side { margin-top: 6px; font-weight: 600; color: var(--muted); }
+.conflict-bar { display: flex; gap: 8px; margin-top: 8px; }

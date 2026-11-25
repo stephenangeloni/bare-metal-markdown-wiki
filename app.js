@@ -503,7 +503,6 @@
     el('content').scrollTop = 0; // hash-only navigation: the browser never resets the article container, so do it here
   }
   function showPage(slug) {
-    if (editing) dropLock(editing.root, editing.path); // leaving the page ends the edit, lock included
     shownPage = slug; editing = null;
     el('page').classList.remove('home');
     if (!slug) { document.title = renderLanding() + ' — ' + wikiName; }
@@ -536,21 +535,64 @@
     for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
     return dir.getFileHandle(parts[parts.length - 1]);
   }
+  function versionOf(modified, raw) { return { modified: modified, raw: raw, text: raw.replace(/\r\n/g, '\n') }; }
   async function readForEdit(root, path) {
     const f = await (await fileAt(root, path)).getFile();
-    const raw = await f.text();
-    return { text: raw.replace(/\r\n/g, '\n'), version: { modified: f.lastModified, raw: raw } };
+    const version = versionOf(f.lastModified, await f.text());
+    return { text: version.text, version: version };
   }
   async function saveFile(root, path, text, version) {
     const handle = await fileAt(root, path);
     const current = await handle.getFile();
     const raw = await current.text();
-    if (current.lastModified !== version.modified || raw !== version.raw) return { ok: false };
+    if (current.lastModified !== version.modified || raw !== version.raw) {
+      const theirs = versionOf(current.lastModified, raw);
+      const parts = merge3(version.text, text, theirs.text);
+      if (parts.some(function (p) { return p.conflict; })) return { ok: false, parts: parts, version: theirs };
+      text = parts.map(function (p) { return p.text; }).join('');
+    }
     const out = raw.indexOf('\r\n') !== -1 ? text.replace(/\r?\n/g, '\r\n') : text;
     const w = await handle.createWritable();
     await w.write(out);
     await w.close();
-    return { ok: true, version: { modified: (await handle.getFile()).lastModified, raw: out } };
+    return { ok: true, version: versionOf((await handle.getFile()).lastModified, out) };
+  }
+  function splitLines(text) { return text.match(/[^\n]*\n|[^\n]+$/g) || []; }
+  function matchLines(a, b) {
+    const match = new Array(a.length).fill(-1);
+    let head = 0, tail = 0;
+    while (head < a.length && head < b.length && a[head] === b[head]) { match[head] = head; head++; }
+    while (tail < a.length - head && tail < b.length - head && a[a.length - 1 - tail] === b[b.length - 1 - tail]) { match[a.length - 1 - tail] = b.length - 1 - tail; tail++; }
+    const n = a.length - head - tail, m = b.length - head - tail;
+    const len = new Uint32Array((n + 1) * (m + 1));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) {
+      len[i * (m + 1) + j] = a[head + i] === b[head + j] ? len[(i + 1) * (m + 1) + j + 1] + 1 : Math.max(len[(i + 1) * (m + 1) + j], len[i * (m + 1) + j + 1]);
+    }
+    for (let i = 0, j = 0; i < n && j < m;) {
+      if (a[head + i] === b[head + j]) { match[head + i] = head + j; i++; j++; }
+      else if (len[(i + 1) * (m + 1) + j] >= len[i * (m + 1) + j + 1]) i++;
+      else j++;
+    }
+    return match;
+  }
+  function merge3(base, mine, theirs) {
+    const b = splitLines(base), my = splitLines(mine), th = splitLines(theirs);
+    const toMine = matchLines(b, my), toTheirs = matchLines(b, th);
+    const parts = [];
+    function push(text, mineText) { parts.push({ text: text, mine: mineText }); }
+    let i = 0, m = 0, t = 0;
+    while (i < b.length || m < my.length || t < th.length) {
+      if (i < b.length && toMine[i] === m && toTheirs[i] === t) { push(b[i], b[i]); i++; m++; t++; continue; }
+      let next = i;
+      while (next < b.length && (toMine[next] < 0 || toTheirs[next] < 0)) next++;
+      const mEnd = next < b.length ? toMine[next] : my.length, tEnd = next < b.length ? toTheirs[next] : th.length;
+      const was = b.slice(i, next).join(''), mineText = my.slice(m, mEnd).join(''), theirText = th.slice(t, tEnd).join('');
+      if (mineText === was || mineText === theirText) push(theirText, mineText);
+      else if (theirText === was) push(mineText, mineText);
+      else parts.push({ conflict: true, mine: mineText, theirs: theirText });
+      i = next; m = mEnd; t = tEnd;
+    }
+    return parts;
   }
   function extRe(list) { // live-render image list, set by imageExts in config.js; junk entries dropped, empty falls back to the built-in list
     const ok = (Array.isArray(list) ? list : []).filter(function (s) { return /^[a-z0-9]+$/i.test(s); });
@@ -620,9 +662,7 @@
     return showFolder(liveHandle);
   }
   async function pollLive() {
-    // keep our lock fresh while editing instead of re-reading the folder; shortcut: a background
-    // tab's timer is throttled, so its lock can lapse — the save-time check still catches that clash
-    if (editing) { await takeLock(editing.root, editing.path); return; }
+    if (editing) { await checkEditedPage(); return; }
     if (mode !== 'live' || loading || document.hidden) return;
     const mine = loading = { h: liveHandle };
     let changed = false;
@@ -632,32 +672,6 @@
     if (changed) { lastRefresh = 0; await refreshLive(); }
   }
 
-  // ---------- edit locks ----------
-  // Advisory, like vim's .swp: they warn before a second person types half an hour into the same
-  // page, they never replace the save-time conflict check, and a lock left behind by a tab that
-  // died expires by itself, so nobody can be locked out of the folder.
-  // the 5s poll keeps a live lock fresh; anything older than this means that tab is gone
-  const LOCK_STALE = 20000;
-  async function lockOf(root, path) {
-    const parts = path.split('/');
-    let dir = root;
-    for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
-    return { dir: dir, name: parts[parts.length - 1] + '.lock' }; // Home.md -> Home.md.lock
-  }
-  async function lockAge(root, path) { // ms since it was written, or null when the page is free
-    // shortcut: the age compares our clock with the file's timestamp, so a machine whose clock is
-    // off by more than LOCK_STALE looks stale or immortal; revisit if shared drives ever disagree.
-    try { const l = await lockOf(root, path); return Date.now() - (await (await l.dir.getFileHandle(l.name)).getFile()).lastModified; }
-    catch (e) { return null; }
-  }
-  async function takeLock(root, path) { // best effort: a folder that refuses the file still edits
-    try { const l = await lockOf(root, path); const w = await (await l.dir.getFileHandle(l.name, { create: true })).createWritable(); await w.close(); }
-    catch (e) {}
-  }
-  async function dropLock(root, path) {
-    try { const l = await lockOf(root, path); await l.dir.removeEntry(l.name); } catch (e) {}
-  }
-
   function editMsg(text) { const m = el('editMsg'); if (m) m.textContent = text; }
   function lockEditor(locked) { el('editText').readOnly = locked; el('editSave').disabled = locked; el('editCancel').disabled = locked; }
   async function openEditor() {
@@ -665,22 +679,16 @@
     if (!p || !h || editing) return;
     try {
       if ((await h.requestPermission({ mode: 'readwrite' })) !== 'granted') return;
-      const held = await lockAge(h, p.path);
-      if (held !== null && held < LOCK_STALE) {
-        el('editNote').textContent = 'Someone has this page open for editing (their lock was written ' + Math.round(held / 1000) +
-          's ago). It clears when they save or cancel, or on its own after ' + Math.round(LOCK_STALE / 1000) + 's — try again in a moment.';
-        return;
-      }
       const opened = await readForEdit(h, p.path);
       if (liveHandle !== h || !PAGES[slug] || (shownPage || landingPage) !== slug || editing) return;
       if (opened.text.indexOf('\uFFFD') !== -1) {
         el('editNote').textContent = 'This page is not saved as UTF-8 text, so saving it here would damage its special characters. Convert it to UTF-8 in a text editor first.';
         return;
       }
-      editing = { root: h, slug: slug, path: p.path, version: opened.version, saving: false };
-      await takeLock(h, p.path);
+      editing = { root: h, slug: slug, path: p.path, version: opened.version, saving: false, incoming: null, conflict: null };
       const page = el('page');
-      page.innerHTML = crumbHtml(slug) + '<div class="editor"><textarea id="editText" spellcheck="false"></textarea>' +
+      page.innerHTML = crumbHtml(slug) + '<div class="editor"><div id="editAlert" class="edit-alert"></div><div id="editConflicts" class="edit-conflicts"></div>' +
+        '<textarea id="editText" spellcheck="false"></textarea>' +
         '<div class="editor-bar"><button id="editSave" class="btn" type="button" data-edit="save">Save</button>' +
         '<button id="editCancel" class="btn" type="button" data-edit="cancel">Cancel</button><span id="editMsg" class="edit-msg"></span></div></div>';
       el('editText').value = opened.text;
@@ -690,7 +698,7 @@
   }
   async function saveEditor() {
     const ed = editing;
-    if (!ed || ed.saving) return;
+    if (!ed || ed.saving || ed.conflict) return;
     ed.saving = true; lockEditor(true); editMsg('Saving\u2026');
     let r;
     try { r = await saveFile(ed.root, ed.path, el('editText').value, ed.version); }
@@ -702,10 +710,95 @@
     if (editing !== ed) return;
     if (!r.ok) {
       ed.saving = false; lockEditor(false);
-      editMsg(r.error ? 'Could not save: ' + r.error.message : 'Someone else changed this page while you were editing. Your text is still in the box: copy it, press Cancel to see their version, then edit again.');
+      if (r.error) { editMsg('Could not save: ' + r.error.message); return; }
+      ed.incoming = null; el('editAlert').innerHTML = '';
+      reconcile(ed, r.parts, r.version);
+      editMsg('Someone else saved this page while you were editing, on the same lines as you. Nothing was saved: choose what to keep above, then Save again.');
       return;
     }
     renderTags(); showPage(shownPage);
+  }
+  async function checkEditedPage() {
+    const ed = editing;
+    if (ed.saving || ed.conflict) return;
+    const known = ed.incoming || ed.version;
+    let f, raw;
+    try { f = await (await fileAt(ed.root, ed.path)).getFile(); if (f.lastModified === known.modified) return; raw = await f.text(); }
+    catch (e) { return; }
+    if (editing !== ed || ed.saving || ed.conflict) return;
+    if (raw === known.raw) { known.modified = f.lastModified; return; }
+    ed.incoming = versionOf(f.lastModified, raw);
+    el('editAlert').innerHTML = 'Someone else saved this page while you were editing.' +
+      ' <button class="btn" type="button" data-edit="merge">Merge their changes into mine</button>' +
+      ' <button class="btn" type="button" data-edit="changes">Show what changed</button>';
+  }
+  function changedLines(before, after) {
+    const a = splitLines(before), b = splitLines(after), match = matchLines(a, b), out = [];
+    let j = 0;
+    a.forEach(function (line, i) {
+      if (match[i] < 0) { out.push('- ' + line); return; }
+      while (j < match[i]) out.push('+ ' + b[j++]);
+      j++;
+    });
+    while (j < b.length) out.push('+ ' + b[j++]);
+    return out.map(function (l) { return l.replace(/\n$/, ''); }).join('\n');
+  }
+  function showChanges() {
+    const ed = editing;
+    if (!ed || !ed.incoming || el('editAlert').innerHTML.indexOf('<pre>') !== -1) return;
+    el('editAlert').innerHTML += '<pre>' + escapeHtml(changedLines(ed.version.text, ed.incoming.text)) + '</pre>';
+  }
+  function mergeIncoming() {
+    const ed = editing;
+    if (!ed || !ed.incoming || ed.saving || ed.conflict) return;
+    const theirs = ed.incoming;
+    ed.incoming = null; el('editAlert').innerHTML = '';
+    reconcile(ed, merge3(ed.version.text, el('editText').value, theirs.text), theirs);
+  }
+  function reconcile(ed, parts, theirs) {
+    if (!parts.some(function (p) { return p.conflict; })) { putMerged(ed, parts, theirs); return; }
+    ed.conflict = { parts: parts, version: theirs, choices: {} };
+    el('editText').readOnly = true; el('editSave').disabled = true;
+    showConflicts(ed);
+  }
+  function putMerged(ed, parts, theirs) {
+    const box = el('editText'), top = box.scrollTop;
+    let mineAt = 0, outAt = 0, cursor = null;
+    for (const p of parts) {
+      const at = box.selectionStart - mineAt, kept = p.text === p.mine;
+      if (cursor === null && (kept ? at <= p.mine.length : at < p.mine.length)) cursor = kept ? outAt + at : outAt;
+      mineAt += p.mine.length; outAt += p.text.length;
+    }
+    box.value = parts.map(function (p) { return p.text; }).join('');
+    box.setSelectionRange(cursor === null ? outAt : cursor, cursor === null ? outAt : cursor);
+    box.scrollTop = top;
+    ed.version = theirs;
+  }
+  function showConflicts(ed) {
+    const c = ed.conflict;
+    el('editConflicts').innerHTML = '<p>Your edit and theirs changed the same lines. For each place below, choose what to keep; the text box unlocks once every one is decided.</p>' +
+      c.parts.map(function (p, k) {
+        if (!p.conflict || c.choices[k]) return '';
+        const btn = function (side, label) { return '<button class="btn" type="button" data-edit="pick" data-k="' + k + '" data-side="' + side + '">' + label + '</button>'; };
+        return '<div class="conflict"><div class="conflict-side">Theirs</div><pre>' + escapeHtml(p.theirs) + '</pre>' +
+          '<div class="conflict-side">Yours</div><pre>' + escapeHtml(p.mine) + '</pre>' +
+          '<div class="conflict-bar">' + btn('mine', 'Keep mine') + btn('theirs', 'Keep theirs') + btn('both', 'Keep both') + '</div></div>';
+      }).join('');
+  }
+  function pickConflict(k, side) {
+    const ed = editing, c = ed && ed.conflict;
+    if (!c || !c.parts[k] || !c.parts[k].conflict) return;
+    c.choices[k] = side;
+    if (c.parts.some(function (p, i) { return p.conflict && !c.choices[i]; })) { showConflicts(ed); return; }
+    const both = function (p) { return p.theirs && p.mine && !/\n$/.test(p.theirs) ? p.theirs + '\n' + p.mine : p.theirs + p.mine; };
+    const parts = c.parts.map(function (p, i) {
+      if (!p.conflict) return p;
+      return { text: c.choices[i] === 'mine' ? p.mine : c.choices[i] === 'theirs' ? p.theirs : both(p), mine: p.mine };
+    });
+    ed.conflict = null; el('editConflicts').innerHTML = '';
+    el('editText').readOnly = false; el('editSave').disabled = false;
+    putMerged(ed, parts, c.version);
+    editMsg('Their changes are merged into your text. Check it, then Save.');
   }
   function cancelEditor() { showPage(shownPage); lastRefresh = 0; refreshLive(); }
 
@@ -753,7 +846,11 @@
         return;
       }
       const ed = e.target.closest('[data-edit]');
-      if (ed) { ({ open: openEditor, save: saveEditor, cancel: cancelEditor })[ed.dataset.edit](); return; }
+      if (ed) {
+        if (ed.dataset.edit === 'pick') pickConflict(Number(ed.dataset.k), ed.dataset.side);
+        else ({ open: openEditor, save: saveEditor, cancel: cancelEditor, merge: mergeIncoming, changes: showChanges })[ed.dataset.edit]();
+        return;
+      }
       const b = e.target.closest('.copybtn');
       if (!b) return;
       const code = b.closest('pre').querySelector('code');

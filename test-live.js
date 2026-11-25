@@ -2,9 +2,9 @@
 
 
 const grab = require('./test-grab.js');
-const GRABBED = ['titleOf', 'parseFrontmatter', 'buildIndex', 'renderLanding', 'route', 'loadLive', 'folderStamp', 'fileAt', 'readForEdit', 'saveFile',
+const GRABBED = ['titleOf', 'parseFrontmatter', 'buildIndex', 'renderLanding', 'route', 'loadLive', 'folderStamp', 'fileAt', 'versionOf', 'readForEdit', 'saveFile',
   'applyLive', 'showPage', 'walkDir', 'showFolder', 'chooseFolder', 'refreshLive', 'pollLive', 'editMsg', 'lockEditor', 'openEditor', 'saveEditor', 'cancelEditor',
-  'lockOf', 'lockAge', 'takeLock', 'dropLock', 'LOCK_STALE'].map(grab).join('\n');
+  'splitLines', 'matchLines', 'merge3', 'changedLines', 'checkEditedPage', 'mergeIncoming', 'showChanges', 'reconcile', 'putMerged', 'showConflicts', 'pickConflict'].map(grab).join('\n');
 
 const factory = (0, eval)(`(function (env) {
   const el = env.el, location = env.location, document = env.document;
@@ -15,6 +15,7 @@ const factory = (0, eval)(`(function (env) {
   function closeNav() {} function renderSidebar() {} function renderTags() {} function placeToc() {} function markActive() {}
   function setMode(m) { env.label = m === 'live' ? liveHandle.name : 'bundled'; }
   function crumbHtml(slug) { return '<nav>' + slug + '</nav>'; }
+  function escapeHtml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function outLinks() { return new Set(); }
   async function fileToDataURI(f) { return 'data:' + await f.text(); }
   function renderPage(slug) {
@@ -25,13 +26,14 @@ const factory = (0, eval)(`(function (env) {
   ${GRABBED}
   return {
     route: route, refreshLive: refreshLive, pollLive: pollLive, openEditor: openEditor, saveEditor: saveEditor, cancelEditor: cancelEditor, chooseFolder: chooseFolder,
+    mergeIncoming: mergeIncoming, showChanges: showChanges, pickConflict: pickConflict,
     async start(h) { applyLive(await loadLive(h)); liveHandle = h; mode = 'live'; buildIndex(); setMode('live'); route(); },
     forceRefresh() { lastRefresh = 0; return refreshLive(); },
     get editing() { return editing; }, get pages() { return PAGES; }, get handle() { return liveHandle && liveHandle.name; }
   };
 })`);
 
-let clock = Date.now(); // real timestamps, so a lock's age measured against Date.now() means something
+let clock = Date.now();
 function page(text) { return { bytes: Buffer.isBuffer(text) ? text : Buffer.from(text, 'utf8'), modified: ++clock }; }
 function textOf(f) { return f.bytes.toString('utf8'); }
 function isFile(n) { return Buffer.isBuffer(n.bytes); }
@@ -89,15 +91,18 @@ async function settle() { for (let i = 0; i < 30; i++) await new Promise(functio
 function makeApp(opts) {
   opts = opts || {};
   const els = {}; let html = ''; let editorEls = null;
-  function mk() { return { innerHTML: '', value: '', textContent: '', scrollTop: 0, readOnly: false, disabled: false, classList: { add() {}, remove() {}, toggle() {} }, focus() {} }; }
+  function mk() {
+    return { innerHTML: '', value: '', textContent: '', scrollTop: 0, readOnly: false, disabled: false, selectionStart: 0, selectionEnd: 0,
+      classList: { add() {}, remove() {}, toggle() {} }, focus() {}, setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; } };
+  }
   const pageEl = mk();
   Object.defineProperty(pageEl, 'innerHTML', {
     get() { return html; },
-    set(v) { html = v; editorEls = {}; ['editText', 'editMsg', 'editSave', 'editCancel'].forEach(function (id) { if (v.indexOf('id="' + id + '"') !== -1) editorEls[id] = mk(); }); }
+    set(v) { html = v; editorEls = {}; ['editText', 'editMsg', 'editSave', 'editCancel', 'editAlert', 'editConflicts'].forEach(function (id) { if (v.indexOf('id="' + id + '"') !== -1) editorEls[id] = mk(); }); }
   });
   const env = {
     location: { hash: opts.hash || '' }, document: { hidden: false, title: '' }, landingPage: opts.landingPage || '', label: '', pick: null,
-    el(id) { if (id === 'page') return pageEl; if (/^edit(Text|Msg|Save|Cancel)$/.test(id)) return (editorEls && editorEls[id]) || null; return els[id] || (els[id] = mk()); }
+    el(id) { if (id === 'page') return pageEl; if (/^edit(Text|Msg|Save|Cancel|Alert|Conflicts)$/.test(id)) return (editorEls && editorEls[id]) || null; return els[id] || (els[id] = mk()); }
   };
   const app = factory(env);
   return {
@@ -105,6 +110,8 @@ function makeApp(opts) {
     screen() { return html; },
     editor() { return env.el('editText'); },
     msg() { const m = env.el('editMsg'); return m ? m.textContent : null; },
+    alert() { const a = env.el('editAlert'); return a ? a.innerHTML : null; },
+    conflicts() { const c = env.el('editConflicts'); return c ? c.innerHTML : null; },
     go(hash) { env.location.hash = hash; app.route(); }
   };
 }
@@ -130,58 +137,130 @@ test('baseline: a poll shows a change made by someone else', async function () {
   if (!w.screen().includes('their v2')) throw new Error('screen: ' + w.screen());
 });
 
-test('a page another user has locked does not open in the editor', async function () {
-  const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
-  tree['Home.md.lock'] = page('');
-  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
-  await w.app.openEditor();
-  const bad = [];
-  check(bad, !w.editor() && !w.app.editing, 'the editor opened over their lock; screen: ' + w.screen());
-  check(bad, /open for editing/.test(w.env.el('editNote').textContent || ''), 'no explanation on screen: ' + JSON.stringify(w.env.el('editNote').textContent));
-  check(bad, textOf(tree['Home.md']) === 'v1', 'the page was changed');
-  check(bad, !w.app.pages['Home.md.lock'], 'the lock file was listed as a page: ' + Object.keys(w.app.pages));
-  if (bad.length) throw new Error(bad.join('\n  '));
-});
-
-test('a stale lock left by a tab that died does not block editing', async function () {
-  const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
-  tree['Home.md.lock'] = page(''); tree['Home.md.lock'].modified = Date.now() - 60000;
-  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
-  await w.app.openEditor();
-  if (!w.app.editing) throw new Error('a minute-old lock blocked the editor: ' + w.env.el('editNote').textContent);
-});
-
-test('editing writes a lock beside the page, and saving, cancelling or leaving removes it', async function () {
-  const tree = { 'A.md': page('a'), 'B.md': page('b') }; const f = fakeFolder('A', tree);
+test('editing writes nothing beside the page', async function () {
+  const tree = { 'A.md': page('a') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
+  await w.app.openEditor(); await w.app.pollLive();
+  if (Object.keys(tree).join(',') !== 'A.md') throw new Error('folder while editing: ' + Object.keys(tree));
+});
+
+test('while editing, a poll notices their save and offers a merge without touching my text', async function () {
+  const tree = { 'Home.md': page('v1\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'v1 mine\n';
   const bad = [];
-  await w.app.openEditor();
-  check(bad, 'A.md.lock' in tree, 'no lock file while editing; folder: ' + Object.keys(tree));
-  check(bad, !('B.md.lock' in tree), 'a lock was written for a page nobody opened');
-  w.editor().value = 'a v2'; await w.app.saveEditor();
-  check(bad, !('A.md.lock' in tree), 'the lock survived a save');
-  await w.app.openEditor(); w.app.cancelEditor(); await settle();
-  check(bad, !('A.md.lock' in tree), 'the lock survived a cancel');
-  await w.app.openEditor(); w.go('#B'); await settle();
-  check(bad, !('A.md.lock' in tree), 'the lock survived leaving the page');
+  await w.app.pollLive();
+  check(bad, w.alert() === '', 'a warning with nothing changed: ' + w.alert());
+  tree['Home.md'] = page('their v2\n'); await w.app.pollLive();
+  check(bad, /Someone else saved this page/.test(w.alert()) && /data-edit="merge"/.test(w.alert()), 'no merge offer: ' + w.alert());
+  check(bad, w.editor() && w.editor().value === 'v1 mine\n', 'the draft box changed: ' + (w.editor() ? w.editor().value : 'gone'));
   if (bad.length) throw new Error(bad.join('\n  '));
 });
 
-test('while editing, the poll refreshes the lock and still does not re-read the folder', async function () {
-  const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
+test('merging their save into my draft keeps both edits, and the next save writes them', async function () {
+  const tree = { 'Home.md': page('title\nintro\nmiddle\nend\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'title\nmy intro\nmiddle\nend\n';
+  tree['Home.md'] = page('title\nintro\nmiddle\nend\ntheir line\n'); await w.app.pollLive();
+  w.app.mergeIncoming();
+  const bad = [];
+  check(bad, w.editor().value === 'title\nmy intro\nmiddle\nend\ntheir line\n', 'draft after merge: ' + JSON.stringify(w.editor().value));
+  check(bad, w.alert() === '', 'the warning stayed: ' + w.alert());
+  await w.app.pollLive();
+  check(bad, w.alert() === '', 'the merged version was reported again: ' + w.alert());
+  await w.app.saveEditor();
+  check(bad, textOf(tree['Home.md']) === 'title\nmy intro\nmiddle\nend\ntheir line\n', 'file on disk: ' + JSON.stringify(textOf(tree['Home.md'])));
+  if (bad.length) throw new Error(bad.join('\n  '));
+});
+
+test('merging keeps my cursor on the text I was typing', async function () {
+  const tree = { 'Home.md': page('a\nb\nc\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a\nb\nc mine\n'; w.editor().setSelectionRange(10, 10);
+  tree['Home.md'] = page('their first line\na\nb\nc\n'); await w.app.pollLive();
+  w.app.mergeIncoming();
+  const v = w.editor().value, at = w.editor().selectionStart;
+  if (v.slice(0, at) !== 'their first line\na\nb\nc mine') throw new Error('cursor after merge sits after ' + JSON.stringify(v.slice(0, at)));
+});
+
+test('merging keeps a cursor at the end of my text before the lines they added at the end', async function () {
+  const tree = { 'Home.md': page('a\nb\nc\nd\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().setSelectionRange(8, 8);
+  tree['Home.md'] = page('a\nb\nc\nd\ne\n'); await w.app.pollLive();
+  w.app.mergeIncoming();
+  if (w.editor().selectionStart !== 8) throw new Error('cursor after merge at ' + w.editor().selectionStart + ', expected 8 (before their new line)');
+});
+
+test('a save of identical text raises no warning and the next save goes through', async function () {
+  const tree = { 'Home.md': page('a\nb\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a\nb mine\n';
+  tree['Home.md'] = page('a\nb\n'); await w.app.pollLive();
+  const bad = [];
+  check(bad, w.alert() === '', 'warning for a save that changed nothing: ' + w.alert());
+  await w.app.saveEditor();
+  check(bad, textOf(tree['Home.md']) === 'a\nb mine\n', 'file on disk: ' + JSON.stringify(textOf(tree['Home.md'])));
+  if (bad.length) throw new Error(bad.join('\n  '));
+});
+
+test('a Windows line-ending page keeps them through a merge and through a clash', async function () {
+  const tree = { 'Home.md': page('a\r\nb\r\nc\r\nd\r\ne\r\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a mine\nb\nc\nd\ne mine\n';
+  tree['Home.md'] = page('a\r\nb\r\nc theirs\r\nd\r\ne\r\n'); await w.app.pollLive();
+  w.app.mergeIncoming();
+  const bad = [];
+  check(bad, w.editor().value === 'a mine\nb\nc theirs\nd\ne mine\n', 'draft after merge: ' + JSON.stringify(w.editor().value));
+  tree['Home.md'] = page('a\r\nb\r\nc theirs\r\nd\r\ne theirs\r\n'); await w.app.saveEditor();
+  check(bad, /e theirs/.test(w.conflicts() || ''), 'no clash offered: ' + w.conflicts());
+  w.app.pickConflict(Number(/data-k="(\d+)"/.exec(w.conflicts())[1]), 'mine'); await w.app.saveEditor();
+  check(bad, textOf(tree['Home.md']) === 'a mine\r\nb\r\nc theirs\r\nd\r\ne mine\r\n', 'file on disk: ' + JSON.stringify(textOf(tree['Home.md'])));
+  if (bad.length) throw new Error(bad.join('\n  '));
+});
+
+test('show what changed lists the lines they removed and added', async function () {
+  const tree = { 'Home.md': page('a\nb\nc\n') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
   await w.app.openEditor();
-  const before = tree['Home.md.lock'].modified;
-  tree['Home.md'] = page('their v2');
-  await w.app.pollLive();
+  tree['Home.md'] = page('a\nB\nc\n'); await w.app.pollLive();
+  w.app.showChanges();
+  if (!w.alert().includes('<pre>- b\n+ B</pre>')) throw new Error('alert: ' + w.alert());
+});
+
+test('a merge that overlaps locks the box and asks, conflict by conflict, which side to keep', async function () {
+  const tree = { 'Home.md': page('a\nb\nc\nd\ne\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a mine\nb\nc\nd\ne mine\n';
+  tree['Home.md'] = page('a theirs\nb\nc theirs\nd\ne theirs\n'); await w.app.pollLive();
+  w.app.mergeIncoming();
   const bad = [];
-  check(bad, tree['Home.md.lock'].modified !== before, 'the lock was not refreshed');
-  check(bad, !w.screen().includes('their v2'), 'their edit replaced what is on screen');
-  check(bad, w.editor() && w.editor().value === 'v1', 'the draft box changed: ' + (w.editor() ? w.editor().value : 'gone'));
+  check(bad, w.editor().readOnly && w.env.el('editSave').disabled, 'the box or Save stayed usable during the choice');
+  check(bad, w.conflicts().includes('a theirs') && w.conflicts().includes('a mine') && w.conflicts().includes('e mine'), 'conflicts shown: ' + w.conflicts());
+  const k = /data-k="(\d+)"/g, ks = []; let x; while ((x = k.exec(w.conflicts()))) if (ks.indexOf(x[1]) < 0) ks.push(x[1]);
+  check(bad, ks.length === 2, 'expected 2 conflicts, got ' + ks.length);
+  w.app.pickConflict(Number(ks[0]), 'mine');
+  check(bad, w.editor().readOnly, 'the box unlocked with a conflict still open');
+  w.app.pickConflict(Number(ks[1]), 'both');
+  check(bad, w.editor().value === 'a mine\nb\nc theirs\nd\ne theirs\ne mine\n', 'resolved draft: ' + JSON.stringify(w.editor().value));
+  check(bad, !w.editor().readOnly && !w.env.el('editSave').disabled && w.conflicts() === '', 'still locked after every conflict was decided');
+  await w.app.saveEditor();
+  check(bad, textOf(tree['Home.md']) === 'a mine\nb\nc theirs\nd\ne theirs\ne mine\n', 'file on disk: ' + JSON.stringify(textOf(tree['Home.md'])));
   if (bad.length) throw new Error(bad.join('\n  '));
 });
 
-test('baseline: saving over a newer version is refused and the text stays in the box', async function () {
+test('saving over their save on other lines merges and saves', async function () {
+  const tree = { 'Home.md': page('a\nb\nc\n') }; const f = fakeFolder('A', tree);
+  const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
+  await w.app.openEditor(); w.editor().value = 'a mine\nb\nc\n';
+  tree['Home.md'] = page('a\nb\nc theirs\n'); await w.app.saveEditor();
+  const bad = [];
+  check(bad, textOf(tree['Home.md']) === 'a mine\nb\nc theirs\n', 'file on disk: ' + JSON.stringify(textOf(tree['Home.md'])));
+  check(bad, !w.app.editing, 'the editor stayed open');
+  if (bad.length) throw new Error(bad.join('\n  '));
+});
+
+test('saving over their save on the same lines writes nothing and asks which side to keep', async function () {
   const tree = { 'Home.md': page('v1') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#Home' }); await w.app.start(f.root);
   await w.app.openEditor(); w.editor().value = 'mine';
@@ -190,6 +269,9 @@ test('baseline: saving over a newer version is refused and the text stays in the
   check(bad, textOf(tree['Home.md']) === 'theirs', 'file on disk is ' + JSON.stringify(textOf(tree['Home.md'])));
   check(bad, w.editor() && w.editor().value === 'mine', 'editor text lost');
   check(bad, /Someone else/.test(w.msg() || ''), 'message: ' + w.msg());
+  check(bad, w.conflicts().includes('theirs') && w.conflicts().includes('data-side="mine"'), 'no choice offered: ' + w.conflicts());
+  w.app.pickConflict(0, 'mine'); await w.app.saveEditor();
+  check(bad, textOf(tree['Home.md']) === 'mine', 'after keeping mine, file on disk is ' + JSON.stringify(textOf(tree['Home.md'])));
   if (bad.length) throw new Error(bad.join('\n  '));
 });
 
@@ -368,12 +450,14 @@ t('a second Save click while the first is in flight writes nothing and the edito
   return bad;
 });
 
-t('a refused save unlocks the editor again', async function () {
+t('a save refused by a clash leaves Cancel usable and unlocks the box once the clash is decided', async function () {
   const tree = { 'A.md': page('a') }; const f = fakeFolder('A', tree);
   const w = makeApp({ hash: '#A' }); await w.app.start(f.root);
   await w.app.openEditor(); w.editor().value = 'mine';
   tree['A.md'] = page('theirs'); await w.app.saveEditor();
   const bad = [];
+  check(bad, w.env.el('editCancel').disabled === false, 'Cancel disabled while choosing');
+  w.app.pickConflict(0, 'theirs');
   check(bad, w.editor() && w.editor().readOnly === false, 'textarea still read-only');
   check(bad, w.env.el('editSave').disabled === false && w.env.el('editCancel').disabled === false, 'buttons still disabled');
   check(bad, w.app.editing && w.app.editing.saving === false, 'saving flag still set');

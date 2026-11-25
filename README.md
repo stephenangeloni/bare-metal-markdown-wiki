@@ -100,26 +100,31 @@ permission to write to the folder.
 Put the wiki on a shared network drive and several people can work on it with
 no server: everyone opens `index.html` from the drive in Chrome or Edge and
 picks the same folder. Each open wiki checks the folder every 5 seconds and
-shows changes made by others (it pauses while the tab is in the background, and
-while you are editing that same tick only keeps your edit lock fresh). While you
-are editing, the **Live render** button does nothing; save or cancel first to
-switch folders.
+shows changes made by others (it pauses while the tab is in the background).
+While you are editing, the **Live render** button does nothing; save or cancel
+first to switch folders.
 
-- If someone else saved the page while you were editing it, **Save** refuses
-  and keeps your text in the box, so you can copy it and redo the edit on their
-  version. Two saves made at nearly the same moment can still overwrite one
-  another — the lock below is advisory, there is no real locking without a
-  server, and on a slow drive the unprotected moment lasts as long as the write
-  itself.
-- Before **Edit** opens, it looks for a `Page.md.lock` file beside the page. If
-  another open wiki wrote one in the last 20 seconds, you get "someone has this
-  page open for editing" instead of the text box, so you are warned before you
-  type rather than only when you save. While you edit, that lock is rewritten
-  every 5 seconds; it is deleted when you save, cancel or leave the page, and a
-  lock left by a tab that crashed simply goes stale, so nobody can be locked out
-  of the folder. It works like vim's `.swp`: advisory, and it does not make the
-  save itself atomic. Lock files are never listed as pages; if the folder is a
-  git repo, ignore them with `*.md.lock`.
+- While you edit, the wiki checks every 5 seconds whether someone else saved
+  the same page. If they did, a banner says so and offers **Merge their changes
+  into mine** and **Show what changed**. Nothing happens to your text until you
+  click Merge. Chrome checks less often in background tabs, so in a tab you are
+  not looking at the banner can be up to a minute late.
+- Merging works on whole lines, like `git merge`: edits on different lines are
+  combined, and the cursor stays on the line you were typing. Merging replaces
+  the text box contents, so Ctrl Z cannot undo past it.
+- If you both changed the same or neighbouring lines, each clash is shown with
+  their lines and yours, and you pick **Keep mine**, **Keep theirs** or **Keep
+  both**. The text box is read-only until every clash is decided. A paragraph is often
+  one line in Markdown, so two edits to the same paragraph usually clash.
+- **Save** merges the same way if someone saved since your last merge. If the
+  edits clash, nothing is written and you choose as above, then save again.
+- Two saves landing at nearly the same moment can still overwrite one another:
+  there is no real locking without a server, and on a slow drive the
+  unprotected moment lasts as long as the write itself.
+- Merging is instant on wiki-sized pages. Its cost grows with the square of the
+  stretch between someone's first and last changed line: an edit at the top and
+  bottom of a 5,000-line page takes about 0.2 s and 100 MB of memory, of a
+  10,000-line page about 0.7 s and 400 MB.
 - Pages are saved as UTF-8 text without a byte-order mark. A page in another
   encoding (for example Windows "ANSI") cannot be edited here; convert it to
   UTF-8 first.
