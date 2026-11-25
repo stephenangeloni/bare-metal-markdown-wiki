@@ -2,8 +2,8 @@
 
 
 const grab = require('./test-grab.js');
-const api = (0, eval)('(function () { const imgExtRe = /\\.png$/i;' + ['fileAt', 'versionOf', 'readForEdit', 'saveFile', 'folderStamp', 'splitLines', 'matchLines', 'merge3'].map(grab).join('\n') +
-  '\nreturn { readForEdit: readForEdit, saveFile: saveFile, folderStamp: folderStamp, merge3: merge3 }; })()');
+const api = (0, eval)('(function () { const imgExtRe = /\\.png$/i; let showAllText = false;' + ['chromeSaveTempFile', 'listsAsText', 'watched', 'watchedFile', 'fileAt', 'versionOf', 'readForEdit', 'saveFile', 'folderStamp', 'splitLines', 'matchLines', 'merge3'].map(grab).join('\n') +
+  '\nreturn { setShowAllText: function (on) { showAllText = on; }, readForEdit: readForEdit, saveFile: saveFile, folderStamp: folderStamp, merge3: merge3 }; })()');
 
 let clock = Date.now();
 function fakeFolder(tree) {
@@ -200,6 +200,17 @@ test('folder stamp ignores the browser temp files written beside a page', async 
   const before = await api.folderStamp(root);
   tree['Home.md.crswap'] = page('partial');
   eq(await api.folderStamp(root), before, 'stamp with a .crswap file present');
+});
+
+test('with all text files on, the folder stamp still ignores the browser temp files', async function () {
+  const tree = { 'Home.md': page('y'), 'notes.txt': page('n') };
+  const root = fakeFolder(tree);
+  api.setShowAllText(true);
+  try {
+    const before = await api.folderStamp(root);
+    tree['Home.md.crswap'] = page('partial');
+    eq(await api.folderStamp(root), before, 'stamp with a .crswap file present');
+  } finally { api.setShowAllText(false); }
 });
 
 (async function () {

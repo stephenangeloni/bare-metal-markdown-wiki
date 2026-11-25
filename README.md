@@ -78,7 +78,8 @@ no network access.
 
 Instead of rebuilding, you can point the wiki directly at a folder on disk.
 
-- Click **Live render** in the top bar (only shown in browsers with the
+- Click the source badge in the top bar (`bundled · data.js`) and choose
+  **Live render a folder…** (offered only in browsers with the
   [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API) —
   Chrome/Edge)
 - Pick your Markdown folder **once**; the choice is remembered (IndexedDB) and
@@ -86,8 +87,9 @@ Instead of rebuilding, you can point the wiki directly at a folder on disk.
   is keyed by where that `index.html` sits, so two wikis on one machine never
   end up live-rendering each other's folder (under `file://` the whole
   computer shares one IndexedDB)
-- The **Bundled** button (shown in live mode) leaves live render and forgets
-  the folder; **Live render** picks one again when you want it back
+- In live mode the badge shows the folder's name. Its menu offers **Open
+  another folder…** to live-render a different folder, and **Back to bundled
+  (data.js)**, which leaves live render and forgets the folder
 - The folder is **checked for changes every 5 seconds** and re-read when the
   tab regains focus, plus a **↻** button for manual refresh — a serverless
   `file://` page has no real file watcher
@@ -96,8 +98,27 @@ Instead of rebuilding, you can point the wiki directly at a folder on disk.
   background reload never slams your open folders shut
 
 Browsers cannot let a `file://` page read sibling folders without a one-time
-user grant; that is the one unavoidable click. In Firefox/Safari the button
-is hidden and the bundled snapshot is used instead.
+user grant; that is the one unavoidable click. In Firefox/Safari the badge
+has no menu and the bundled snapshot is used instead.
+
+#### All text files
+
+In live mode the sidebar has an **All text files** checkbox. With it on, the
+wiki also lists every other text file in the folder (`.txt`, `.js`, `.json`,
+`.csv`, …) and opens it as highlighted source. A file counts as text when its
+first 4 KB contain no NUL byte and are valid UTF-8. Files and folders whose
+name starts with a dot (`.git`, `.env`) are never listed. Search covers these
+files only in the folder of the file on screen; a file over 1 MB matches by
+its name only, and opens showing its first 1 MB. The
+choice is remembered in this browser.
+
+#### Sidebar order
+
+The menu above the sidebar orders it **By title** (the page's title) or **By
+file name**. With **All text files** on, it also offers **By type, in
+folders** (each folder's files ordered by extension) and **Grouped by type**
+(one group per extension, each file shown with its folder). The choice is
+remembered in this browser.
 
 ### Editing (live render only)
 
@@ -121,7 +142,7 @@ Put the wiki on a shared network drive and several people can work on it with
 no server: everyone opens `index.html` from the drive in Chrome or Edge and
 picks the same folder. Each open wiki checks the folder every 5 seconds and
 shows changes made by others (it pauses while the tab is in the background).
-While you are editing, the **Live render** button does nothing; save or cancel
+While you are editing, **Open another folder…** does nothing; save or cancel
 first to switch folders.
 
 - While you edit, the wiki checks every 5 seconds whether someone else saved

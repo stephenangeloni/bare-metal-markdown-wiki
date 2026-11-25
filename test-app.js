@@ -33,6 +33,7 @@ const cases = [
   ['footnote ref in fence kept',    '```\n[^a]\n```',                                   '[^a]'],
   ['footnote span outside code',    'see `[^a]` ok',                                   '[^a]', '!<sup id="fnref-'],
 ];
+(async function () {
 let bad = 0;
 for (const c of cases) {
   const html = withFootnotes(wikiLinks(c[1]));
@@ -104,6 +105,72 @@ for (const [from, want] of themeCases) {
   const got = nextTheme(from);
   if (got !== want) { bad++; console.log('FAIL: nextTheme ' + from + ': got ' + got + ', want ' + want); }
 }
-const total = themeCases.length + schemeCases.length + cases.length + pathCases.length + extCases.length + markCases.length + keyCases.length;
+const sidebarFactory = (0, eval)('(function (env) {\n' +
+  'let PAGES = env.pages, FILES = env.files, mode = env.mode, showAllText = env.showAllText, sidebarSort = env.sort, activeTag = "", treeOpen = null, shownPage = env.shown || "", landingPage = "", foldersOpen = false, sidebarOrder = env.order;\n' +
+  'const out = {}; function el() { return out; } function markActive() {}\n' +
+  [grab('escapeHtml'), grab('titleOf'), grab('taggedSlugs'), grab('sidebarOrderSpecs'), grab('offeredOrders'), grab('shownOrder'), grab('renderSidebar')].join('\n') +
+  '\nrenderSidebar(); return out.innerHTML; })');
+function sidebarFor(sort, opts) {
+  opts = opts || {};
+  const page = function (slug, title) { return { slug: slug, title: title, folder: slug.indexOf('/') < 0 ? '' : slug.slice(0, slug.lastIndexOf('/')), tags: [] }; };
+  const file = function (path, ext) { const cut = path.lastIndexOf('/'); return { key: '/' + path, path: path, folder: cut < 0 ? '' : path.slice(0, cut), name: path.slice(cut + 1), title: path.slice(cut + 1), ext: ext }; };
+  const pages = { Home: page('Home', 'Welcome'), 'Guides/Basics': page('Guides/Basics', 'Basics guide'), 'Guides/Advanced': page('Guides/Advanced', 'Zeta') };
+  const files = opts.textOff ? {} : { 'Guides/data.csv': file('Guides/data.csv', 'csv'), 'Guides/notes.txt': file('Guides/notes.txt', 'txt'), 'top.js': file('top.js', 'js') };
+  const html = sidebarFactory({ pages: pages, files: files, mode: opts.mode || 'live', showAllText: !opts.textOff, sort: sort, order: opts.order || 'files' });
+  const items = []; const re = /href="#([^"]*)" data-slug="([^"]+)">([^<]*)<|<summary>([^<]*)</g; let m;
+  while ((m = re.exec(html))) items.push(m[4] !== undefined ? '[' + m[4] + ']' : (decodeURIComponent(m[1]) === m[2] ? '' : '(links to #' + m[1] + ') ') + m[3]);
+  return items.join(' | ');
+}
+const sidebarCases = [
+  ['by title: pages by title, files by name', 'title', {}, 'top.js | Welcome | [Guides] | Basics guide | data.csv | notes.txt | Zeta'],
+  ['by file name', 'name', {}, 'Home.md | top.js | [Guides] | Advanced.md | Basics.md | data.csv | notes.txt'],
+  ['by type, within folders', 'type', {}, 'top.js | Home.md | [Guides] | data.csv | Advanced.md | Basics.md | notes.txt'],
+  ['grouped by type', 'type-grouped', {}, '[.csv] | Guides/data.csv | [.js] | top.js | [.md] | Guides/Advanced.md | Guides/Basics.md | Home.md | [.txt] | Guides/notes.txt'],
+  ['type falls back to title with text files off', 'type', { textOff: true }, 'Welcome | [Guides] | Basics guide | Zeta'],
+  ['by type keeps extension order when folders mix in alphabetically', 'type', { order: 'alpha' }, '[Guides] | data.csv | Advanced.md | Basics.md | notes.txt | top.js | Home.md'],
+  ['type falls back to title in bundled mode', 'type-grouped', { textOff: true, mode: 'bundled' }, 'Welcome | [Guides] | Basics guide | Zeta'],
+];
+const alphaFactory = function (slugs) {
+  const pages = {}; slugs.forEach(function (sl) { const cut = sl.lastIndexOf('/'); pages[sl] = { slug: sl, folder: cut < 0 ? '' : sl.slice(0, cut), title: sl.slice(cut + 1), tags: [] }; });
+  const html = sidebarFactory({ pages: pages, files: {}, mode: 'bundled', showAllText: false, sort: 'title', order: 'alpha' });
+  const items = []; const re = /data-slug="[^"]+">([^<]*)<|<summary>([^<]*)</g; let m;
+  while ((m = re.exec(html))) items.push(m[2] !== undefined ? '[' + m[2] + ']' : m[1]);
+  return items.join(' | ');
+};
+sidebarCases.push(['alpha stays alphabetical when folder names differ in case', null, null, '[archive] | y | beta | yak | [Zeta] | x']);
+for (const [name, sort, opts, want] of sidebarCases) {
+  const got = sort === null ? alphaFactory(['beta', 'yak', 'Zeta/x', 'archive/y']) : sidebarFor(sort, opts);
+  if (got !== want) { bad++; console.log('FAIL: sidebar ' + name + ':\n  got  ' + got + '\n  want ' + want); }
+}
+const searchFactory = (0, eval)('(function (env) {\n' +
+  'let PAGES = env.pages, FILES = env.files, liveHandle = env.root, folderTexts = { folder: null, items: [] };\n' +
+  'const WIKI = {}; const els = { searchResults: { innerHTML: "", classList: { add() {}, remove() {} } }, clearSearch: { classList: { toggle() {} } } }; function el(id) { return els[id]; }\n' +
+  [grab('escapeHtml'), grab('markHits'), grab('snippet'), grab('intSetting'), grab('heavyTextBytes'), grab('fileAt'), grab('loadFolderTexts'), grab('doSearch')].join('\n') +
+  '\nreturn async function (folder, q) { await loadFolderTexts(folder); doSearch(q); return els.searchResults.innerHTML; }; })');
+function fakeDir(node) {
+  return {
+    async getDirectoryHandle(n) { return fakeDir(node[n]); },
+    async getFileHandle(n) { return { async getFile() { return { size: node[n].length, async text() { return node[n]; } }; } }; }
+  };
+}
+async function searchIn(folder, q) {
+  const disk = { 'top.txt': 'needle at the top', Guides: { 'notes.txt': 'a needle here', 'big.log': 'needle ' + 'x'.repeat(1000001) }, Other: { 'far.txt': 'needle far away' } };
+  const file = function (path) { const cut = path.lastIndexOf('/'); return { key: '/' + path, path: path, folder: cut < 0 ? '' : path.slice(0, cut), name: path.slice(cut + 1) }; };
+  const pages = { 'Other/Deep': { slug: 'Other/Deep', title: 'Deep', folder: 'Other', haystack: 'deep needle', plain: 'deep needle' } };
+  const files = {}; ['top.txt', 'Guides/notes.txt', 'Guides/big.log', 'Other/far.txt'].forEach(function (p) { files['/' + p] = file(p); });
+  const html = await searchFactory({ pages: pages, files: files, root: fakeDir(disk) })(folder, q);
+  return (html.match(/href="#[^"]+"/g) || []).map(function (h) { return decodeURIComponent(h.slice(7, -1)); }).sort().join(', ');
+}
+const searchCases = [
+  ['Guides folder', 'Guides', '/Guides/notes.txt, Other/Deep'],
+  ['root folder', '', '/top.txt, Other/Deep'],
+  ['Other folder', 'Other', '/Other/far.txt, Other/Deep'],
+];
+for (const [name, folder, want] of searchCases) {
+  const got = await searchIn(folder, 'needle');
+  if (got !== want) { bad++; console.log('FAIL: search ' + name + ': got ' + got + ', want ' + want); }
+}
+const total = searchCases.length + sidebarCases.length + themeCases.length + schemeCases.length + cases.length + pathCases.length + extCases.length + markCases.length + keyCases.length;
 if (bad) { console.log(bad + ' failed'); process.exit(1); }
 console.log('test-app: ' + total + '/' + total + ' passed');
+})();
