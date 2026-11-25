@@ -4,13 +4,15 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
-const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-')), 'index-all.html');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bundle-'));
+const out = path.join(tmp, 'index-all.html');
+const read = f => fs.readFileSync(path.join(__dirname, f), 'utf8');
+const indexBefore = read('index.html');
 execFileSync(process.execPath, [path.join(__dirname, 'bundle.js'), out], { stdio: 'inherit' });
 const html = fs.readFileSync(out, 'utf8');
-const read = f => fs.readFileSync(path.join(__dirname, f), 'utf8');
 
-let bad = 0;
-function check(name, ok) { if (!ok) { bad++; console.log('FAIL: ' + name); } }
+let bad = 0, total = 0;
+function check(name, ok) { total++; if (!ok) { bad++; console.log('FAIL: ' + name); } }
 
 const scriptSrcs = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]*)"/g)].map(m => m[1]);
 check('only data.js is loaded by src, got ' + JSON.stringify(scriptSrcs), JSON.stringify(scriptSrcs) === '["data.js"]');
@@ -23,7 +25,15 @@ const inlined = ['app.js', 'config.js', 'vendor/markdown-it.min.js', 'vendor/mdi
   'style.css', 'user.css', 'vendor/highlight.css', 'vendor/easymde.min.css'];
 for (const f of inlined) check(f + ' is inlined verbatim', html.includes(read(f)));
 
-check('index.html itself is unchanged by bundling', !read('index.html').includes(read('app.js')));
+check('bundling leaves index.html untouched', read('index.html') === indexBefore);
+
+const copy = path.join(tmp, 'repo');
+fs.cpSync(__dirname, copy, { recursive: true, filter: f => !f.includes(path.sep + '.git') && !f.endsWith('KaTeX_AMS-Regular.woff2') });
+let missingFont = null;
+try { execFileSync(process.execPath, [path.join(copy, 'bundle.js'), path.join(tmp, 'broken.html')], { stdio: 'pipe' }); }
+catch (e) { missingFont = e.stderr.toString(); }
+check('a font with no file to embed fails the bundle', missingFont !== null && missingFont.includes('KaTeX_AMS-Regular'));
+fs.rmSync(tmp, { recursive: true, force: true });
 
 if (bad) { console.log(bad + ' failed'); process.exit(1); }
-console.log('test-bundle: ' + (inlined.length + 5) + '/' + (inlined.length + 5) + ' passed');
+console.log('test-bundle: ' + total + '/' + total + ' passed');

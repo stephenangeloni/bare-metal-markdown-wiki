@@ -14,11 +14,13 @@ function source(file, closingTag) {
 
 function embedFonts(css, cssFile) {
   const dir = path.dirname(path.join(root, cssFile));
-  return css.replace(/(,?)url\(([^)"']+)\) format\("[^"]+"\)/g, (whole, comma, url) => {
-    const file = path.join(dir, url);
-    const font = FONTS[path.extname(url).slice(1)];
-    if (!font || !fs.existsSync(file)) return '';
-    return comma + 'url(data:' + font.type + ';base64,' + fs.readFileSync(file).toString('base64') + ') format("' + font.format + '")';
+  return css.replace(/src:([^;}]*)/g, (whole, list) => {
+    const embedded = [...list.matchAll(/url\(([^)]+)\) format\("[^"]+"\)/g)]
+      .map(([, url]) => ({ file: path.join(dir, url), font: FONTS[path.extname(url).slice(1)] }))
+      .filter(({ file, font }) => font && fs.existsSync(file))
+      .map(({ file, font }) => 'url(data:' + font.type + ';base64,' + fs.readFileSync(file).toString('base64') + ') format("' + font.format + '")');
+    if (!embedded.length) throw new Error(cssFile + ': no font file to embed for src:' + list);
+    return 'src:' + embedded.join(',');
   });
 }
 
